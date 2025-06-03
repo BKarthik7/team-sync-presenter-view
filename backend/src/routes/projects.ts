@@ -43,8 +43,21 @@ router.post('/', isAuthenticated, async (req: Request, res: Response) => {
   }
 });
 
+// Get all projects (public)
+router.get('/public/projects', async (req: Request, res: Response) => {
+  try {
+    const projects = await Project.find()
+      .populate('createdBy', 'name email')
+      .sort({ createdAt: -1 });
+    res.json(projects);
+  } catch (error) {
+    console.error('Error fetching projects:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // Get a single project (public)
-router.get('/:id', async (req: Request, res: Response) => {
+router.get('/public/projects/:id', async (req: Request, res: Response) => {
   try {
     const project = await Project.findById(req.params.id)
       .populate('createdBy', 'name email')

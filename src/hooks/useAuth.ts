@@ -50,7 +50,7 @@ export function useAuth() {
       setUser(response.user);
       return response.user;
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || 'Login failed');
+      throw new Error(error.response?.data?.error || 'Login failed');
     }
   };
 

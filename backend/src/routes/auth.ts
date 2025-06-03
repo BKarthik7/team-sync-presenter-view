@@ -2,6 +2,7 @@ import express, { Response, Request } from 'express';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { User } from '../models/User';
+import { Team } from '../models/Team';
 import { isAuthenticated } from '../middleware/auth';
 import { AuthenticatedRequest } from '../types';
 
@@ -163,11 +164,33 @@ router.post('/teacher/login', async (req: Request, res: Response) => {
 // Peer Login (USN only)
 router.post('/peer/login', async (req: Request, res: Response) => {
   try {
-    const { usn } = (req as any).body;
-    const user = await User.findOne({ usn, role: 'peer' });
+    const { usn, projectId } = (req as any).body;
+    
+    if (!usn || !projectId) {
+      return res.status(400).json({ error: 'USN and Project ID are required' });
+    }
+
+    // Find a team that has this USN and is associated with the project
+    const team = await Team.findOne({
+      project: projectId,
+      members: usn // Since members is an array of strings, we can directly match the USN
+    });
+
+    if (!team) {
+      return res.status(401).json({ error: 'USN not found in any team for this project' });
+    }
+
+    // Find or create the user
+    let user = await User.findOne({ usn, role: 'peer' });
     
     if (!user) {
-      return res.status(401).json({ error: 'Invalid USN' });
+      // Create a new peer user if they don't exist
+      user = new User({
+        usn,
+        role: 'peer',
+        name: usn // Using USN as name initially
+      });
+      await user.save();
     }
 
     const token = jwt.sign(
@@ -176,8 +199,17 @@ router.post('/peer/login', async (req: Request, res: Response) => {
       { expiresIn: '24h' }
     );
 
-    res.json({ user, token });
+    res.json({ 
+      user: {
+        _id: user._id,
+        usn: user.usn,
+        role: user.role,
+        name: user.name
+      }, 
+      token 
+    });
   } catch (error) {
+    console.error('Peer login error:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -268,6 +300,16 @@ router.get('/me', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
     res.json(authReq.user);
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get all teachers (public)
+router.get('/public/teachers', async (req: Request, res: Response) => {
+  try {
+    const teachers = await User.find({ role: 'teacher' }).select('-password');
+    res.json(teachers);
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
   }

@@ -1,21 +1,37 @@
-
-import { useState } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Clock, Users, Star, Send } from "lucide-react";
+import { useEffect, useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
+import { projectAPI, teamAPI } from '../lib/api';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
+import { Button } from './ui/button';
+import { Label } from './ui/label';
+import { Textarea } from './ui/textarea';
+import { RadioGroup, RadioGroupItem } from './ui/radio-group';
+import { Clock, Users, Star, Send } from 'lucide-react';
 
-const PeerDashboard = () => {
-  const [userUSN] = useState("1RV21CS001");
-  const [currentTeam] = useState("Team Alpha");
+interface Project {
+  _id: string;
+  title: string;
+  description: string;
+  teamSize: number;
+  status: 'active' | 'completed' | 'archived';
+}
+
+interface Team {
+  _id: string;
+  name: string;
+  members: string[];
+  project: string;
+}
+
+export default function PeerDashboard() {
+  const { user, logout } = useAuth();
+  const [project, setProject] = useState<Project | null>(null);
+  const [team, setTeam] = useState<Team | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [presentationTimer] = useState(435); // 7:15 in seconds
   const [currentlyPresenting] = useState("Team Beta");
   const [showEvaluation, setShowEvaluation] = useState(false);
-
   const [evaluation, setEvaluation] = useState({
     contentQuality: "",
     presentationSkills: "",
@@ -23,6 +39,36 @@ const PeerDashboard = () => {
     teamwork: "",
     feedback: ""
   });
+
+  useEffect(() => {
+    const fetchProjectAndTeam = async () => {
+      try {
+        const projectId = localStorage.getItem('selectedProjectId');
+        if (!projectId) {
+          setError('No project selected');
+          return;
+        }
+
+        // Fetch project details
+        const projectResponse = await projectAPI.getProject(projectId);
+        setProject(projectResponse);
+
+        // Fetch team details
+        const teamsResponse = await teamAPI.getByProject(projectId);
+        const userTeam = teamsResponse.find((t: Team) => 
+          t.members.includes(user?.usn || '')
+        );
+        setTeam(userTeam || null);
+      } catch (err) {
+        setError('Failed to fetch project and team details');
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchProjectAndTeam();
+  }, [user]);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -47,7 +93,13 @@ const PeerDashboard = () => {
     setShowEvaluation(true);
   };
 
-  const { logout } = useAuth();
+  if (loading) {
+    return <div>Loading...</div>;
+  }
+
+  if (error) {
+    return <div className="text-red-500">{error}</div>;
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 to-pink-100 p-6">
@@ -55,13 +107,24 @@ const PeerDashboard = () => {
         <div className="flex justify-between items-center mb-6">
           <div>
             <h1 className="text-2xl font-bold">Peer Dashboard</h1>
-            <p className="text-gray-600">Welcome, {userUSN}</p>
+            <p className="text-gray-600">Welcome, {user?.usn}</p>
           </div>
           <Button onClick={logout} variant="destructive">Logout</Button>
         </div>
-        <div className="mb-8">
-          <p className="text-gray-600">USN: {userUSN} • Team: {currentTeam}</p>
-        </div>
+
+        {project && (
+          <Card className="mb-4">
+            <CardHeader>
+              <CardTitle>{project.title}</CardTitle>
+              <CardDescription>Project Details</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="mb-2">{project.description}</p>
+              <p className="text-sm text-gray-500">Status: {project.status}</p>
+              <p className="text-sm text-gray-500">Team Size: {project.teamSize}</p>
+            </CardContent>
+          </Card>
+        )}
 
         <div className="grid md:grid-cols-2 gap-6 mb-6">
           <Card>
@@ -82,31 +145,30 @@ const PeerDashboard = () => {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Users className="h-5 w-5" />
-                Your Team Status
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                <div>
-                  <h5 className="font-medium">Team: {currentTeam}</h5>
-                  <p className="text-sm text-gray-600">Members: 1RV21CS001, 1RV21CS002</p>
+          {team && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Users className="h-5 w-5" />
+                  Your Team Status
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  <div>
+                    <h5 className="font-medium">Team: {team.name}</h5>
+                    <p className="text-sm text-gray-600">Members: {team.members.join(', ')}</p>
+                  </div>
+                  <div className="p-3 bg-blue-50 rounded-lg">
+                    <p className="text-blue-800 text-sm">
+                      <strong>Status:</strong> Waiting for your turn
+                    </p>
+                    <p className="text-blue-700 text-xs mt-1">You're next in queue!</p>
+                  </div>
                 </div>
-                <div className="p-3 bg-blue-50 rounded-lg">
-                  <p className="text-blue-800 text-sm">
-                    <strong>Status:</strong> Waiting for your turn
-                  </p>
-                  <p className="text-blue-700 text-xs mt-1">You're next in queue!</p>
-                </div>
-                <Button className="w-full" variant="outline">
-                  View Team Details
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          )}
         </div>
 
         {!showEvaluation ? (
@@ -258,6 +320,4 @@ const PeerDashboard = () => {
       </div>
     </div>
   );
-};
-
-export default PeerDashboard;
+}

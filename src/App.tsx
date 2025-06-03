@@ -8,6 +8,7 @@ import LabAssistantDashboard from './components/LabAssistantDashboard';
 import CreateTeacher from './components/CreateTeacher';
 import TeamFormation from './components/TeamFormation';
 import PresenterDashboard from './components/PresenterDashboard';
+import PeerDashboard from './components/PeerDashboard';
 
 function App() {
   const { user, loading } = useAuth();
@@ -37,6 +38,14 @@ function App() {
           element={
             <ProtectedRoute allowedRoles={['teacher']}>
               <PresenterDashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/peer-dashboard"
+          element={
+            <ProtectedRoute allowedRoles={['peer']}>
+              <PeerDashboard />
             </ProtectedRoute>
           }
         />

@@ -3,8 +3,8 @@ import bcrypt from 'bcryptjs';
 
 export interface IUser extends mongoose.Document {
   _id: mongoose.Types.ObjectId;
-  email: string;
-  password: string;
+  email?: string;
+  password?: string;
   name: string;
   role: 'admin' | 'lab_instructor' | 'teacher' | 'peer';
   usn?: string;  // For peer users
@@ -16,14 +16,18 @@ export interface IUser extends mongoose.Document {
 const userSchema = new mongoose.Schema({
   email: {
     type: String,
-    required: true,
+    required: function(this: { role: string }): boolean {
+      return this.role !== 'peer';
+    },
     unique: true,
     trim: true,
     lowercase: true
   },
   password: {
     type: String,
-    required: true,
+    required: function(this: { role: string }): boolean {
+      return this.role !== 'peer';
+    },
     select: false
   },
   name: {
@@ -37,11 +41,15 @@ const userSchema = new mongoose.Schema({
   },
   usn: {
     type: String,
+    required: function(this: { role: string }): boolean {
+      return this.role === 'peer';
+    },
     validate: {
       validator: function(v: string) {
-        return /^[1-9]\d{2}[A-Z]{2}\d{4}$/.test(v);
+        // Updated regex to match format like 1MS22CS038
+        return /^[1-9][A-Z]{2}\d{2}[A-Z]{2}\d{3}$/.test(v);
       },
-      message: 'Invalid USN format'
+      message: 'Invalid USN format. Expected format: 1MS22CS038'
     }
   }
 }, {
@@ -56,7 +64,7 @@ const userSchema = new mongoose.Schema({
 
 // Hash password before saving
 userSchema.pre('save', async function(next) {
-  if (!this.isModified('password')) {
+  if (!this.isModified('password') || !this.password) {
     return next();
   }
   this.password = await bcrypt.hash(this.password, 10);
@@ -65,6 +73,7 @@ userSchema.pre('save', async function(next) {
 
 // Compare password method
 userSchema.methods.comparePassword = async function(candidatePassword: string): Promise<boolean> {
+  if (!this.password) return false;
   return await bcrypt.compare(candidatePassword, this.password);
 };
 

@@ -74,8 +74,8 @@ export const authAPI = {
     return response.data;
   },
 
-  peerLogin: async (usn: string, password: string) => {
-    const response = await api.post<LoginResponse>('/auth/peer/login', { usn, password });
+  peerLogin: async (usn: string, projectId: string) => {
+    const response = await api.post<LoginResponse>('/auth/peer/login', { usn, projectId });
     return response.data;
   },
 
@@ -105,21 +105,29 @@ export const authAPI = {
 // Project API
 export const projectAPI = {
   getProjects: async () => {
-    const response = await api.get<Project[]>('/projects');
+    const response = await api.get<Project[]>('/projects/public/projects');
     return response.data;
   },
   createProject: async (data: Partial<Project>) => {
     const response = await api.post<Project>('/projects', data);
     return response.data;
   },
-  getProject: async (projectId: string) => {
-    const response = await api.get<Project>(`/projects/${projectId}`);
+  getProject: async (id: string) => {
+    const response = await api.get<Project>(`/projects/public/projects/${id}`);
     return response.data;
   },
-  updateStatus: async (id: string, status: 'active' | 'completed' | 'archived') => {
-    const response = await api.patch<Project>(`/projects/${id}/status`, { status });
+  updateProject: async (id: string, data: Partial<Project>) => {
+    const response = await api.put<Project>(`/projects/${id}`, data);
     return response.data;
   },
+  deleteProject: async (id: string) => {
+    const response = await api.delete(`/projects/${id}`);
+    return response.data;
+  },
+  updateStatus: async (id: string, status: 'active' | 'inactive') => {
+    const response = await api.put<Project>(`/projects/${id}/status`, { status });
+    return response.data;
+  }
 };
 
 // Class API
@@ -142,6 +150,10 @@ export const classAPI = {
   },
   updateTeacher: async (classId: string, teacherId: string) => {
     const response = await api.put<Class>(`/classes/${classId}/teacher`, { teacherId });
+    return response.data;
+  },
+  getTeachers: async () => {
+    const response = await api.get<Teacher[]>('/auth/public/teachers');
     return response.data;
   },
 };
