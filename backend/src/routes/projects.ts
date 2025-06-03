@@ -116,4 +116,29 @@ router.delete('/:id', isAuthenticated, async (req: Request, res: Response) => {
   }
 });
 
+// Update project status
+router.patch('/:id/status', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const { status } = req.body;
+    const project = await Project.findById(req.params.id);
+    
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    // Validate status
+    if (!['active', 'completed', 'archived'].includes(status)) {
+      return res.status(400).json({ error: 'Invalid status' });
+    }
+
+    project.status = status;
+    await project.save();
+    
+    res.json(project);
+  } catch (error) {
+    console.error('Error updating project status:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 export default router; 

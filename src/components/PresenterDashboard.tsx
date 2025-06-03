@@ -27,6 +27,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Switch } from "@/components/ui/switch";
 
 interface Class {
   _id: string;
@@ -62,6 +63,7 @@ const PresenterDashboard = () => {
   const [isTeamsModalOpen, setIsTeamsModalOpen] = useState(false);
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
   const [teamToDelete, setTeamToDelete] = useState<Team | null>(null);
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
   useEffect(() => {
     const fetchProjects = async () => {
@@ -272,6 +274,43 @@ const PresenterDashboard = () => {
     navigate('/login');
   };
 
+  const getClassName = (classId: string) => {
+    const foundClass = classes.find(c => c._id === classId);
+    return foundClass ? foundClass.name : 'Unknown Class';
+  };
+
+  const handleStatusToggle = async (projectId: string, currentStatus: string) => {
+    try {
+      setIsUpdatingStatus(true);
+      const newStatus = currentStatus === 'active' ? 'archived' : 'active';
+      await projectAPI.updateStatus(projectId, newStatus);
+      
+      // Update local state
+      setProjects(prevProjects => 
+        prevProjects.map(p => 
+          p._id === projectId ? { ...p, status: newStatus } : p
+        )
+      );
+      
+      if (selectedProject?._id === projectId) {
+        setSelectedProject(prev => prev ? { ...prev, status: newStatus } : null);
+      }
+
+      toast({
+        title: "Success",
+        description: `Project ${newStatus === 'active' ? 'activated' : 'archived'} successfully`,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.response?.data?.error || "Failed to update project status",
+        variant: "destructive",
+      });
+    } finally {
+      setIsUpdatingStatus(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-50 to-teal-100 p-6">
       <div className="max-w-6xl mx-auto">
@@ -378,7 +417,7 @@ const PresenterDashboard = () => {
                     <div key={project._id} className="p-4 bg-white rounded-lg border flex items-center justify-between">
                       <div>
                         <h4 className="font-semibold">{project.title}</h4>
-                        <p className="text-sm text-gray-600">Class: {project.class} • Teams: {project.teams?.length || 0}</p>
+                        <p className="text-sm text-gray-600">Class: {getClassName(project.class)}</p>
                         <span className={`inline-block px-2 py-1 text-xs rounded ${
                           project.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
                         }`}>
@@ -579,6 +618,19 @@ const PresenterDashboard = () => {
           
           <div className="space-y-6">
             <div className="p-4 bg-blue-50 rounded-lg">
+              <div className="flex justify-between items-center mb-4">
+                <h4 className="font-semibold">Project Status</h4>
+                <div className="flex items-center gap-2">
+                  <Switch
+                    checked={selectedProject?.status === 'active'}
+                    onCheckedChange={() => selectedProject && handleStatusToggle(selectedProject._id, selectedProject.status)}
+                    disabled={isUpdatingStatus}
+                  />
+                  <span className="text-sm text-gray-600">
+                    {selectedProject?.status === 'active' ? 'Active' : 'Archived'}
+                  </span>
+                </div>
+              </div>
               <h4 className="font-semibold mb-2">Team Formation Link</h4>
               <p className="text-sm text-blue-600 mb-3">
                 Share this link with students to let them form teams for this project

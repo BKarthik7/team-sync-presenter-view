@@ -108,12 +108,16 @@ export const projectAPI = {
     const response = await api.get<Project[]>('/projects');
     return response.data;
   },
-  createProject: async (data: Omit<Project, '_id' | 'createdAt'>) => {
+  createProject: async (data: Partial<Project>) => {
     const response = await api.post<Project>('/projects', data);
     return response.data;
   },
   getProject: async (projectId: string) => {
     const response = await api.get<Project>(`/projects/${projectId}`);
+    return response.data;
+  },
+  updateStatus: async (id: string, status: 'active' | 'completed' | 'archived') => {
+    const response = await api.patch<Project>(`/projects/${id}/status`, { status });
     return response.data;
   },
 };
