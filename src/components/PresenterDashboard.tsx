@@ -65,11 +65,18 @@ const PresenterDashboard = () => {
   const [teamToDelete, setTeamToDelete] = useState<Team | null>(null);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
+  // Add new state for active projects
+  const [activeProjects, setActiveProjects] = useState<Project[]>([]);
+  const [projectTeams, setProjectTeams] = useState<Team[]>([]);
+  const [isLoadingTeams, setIsLoadingTeams] = useState(false);
+
   useEffect(() => {
     const fetchProjects = async () => {
       try {
         const response = await projectAPI.getProjects();
         setProjects(response);
+        // Filter active projects
+        setActiveProjects(response.filter(project => project.status === 'active'));
       } catch (error) {
         console.error('Error fetching projects:', error);
       }
@@ -170,15 +177,15 @@ const PresenterDashboard = () => {
     
     // Then try to fetch teams
     try {
-      if (!project.class) {
+      if (!project._id) {
         toast({
           title: "Error",
-          description: "Project is not associated with a class",
+          description: "Project ID not found",
           variant: "destructive",
         });
         return;
       }
-      const response = await teamAPI.getByClass(project.class);
+      const response = await teamAPI.getByProject(project._id);
       setSelectedProjectTeams(response);
     } catch (error) {
       console.error('Error fetching teams:', error);
@@ -311,6 +318,52 @@ const PresenterDashboard = () => {
     }
   };
 
+  // Add tab change handler
+  const handleTabChange = (value: string) => {
+    if (value === 'presentation') {
+      // Refresh projects when switching to presentation tab
+      const fetchProjects = async () => {
+        try {
+          const response = await projectAPI.getProjects();
+          setProjects(response);
+          setActiveProjects(response.filter(project => project.status === 'active'));
+        } catch (error) {
+          console.error('Error fetching projects:', error);
+        }
+      };
+      fetchProjects();
+    }
+  };
+
+  // Update function to fetch teams for a project
+  const fetchProjectTeams = async (projectId: string) => {
+    try {
+      setIsLoadingTeams(true);
+      const teams = await teamAPI.getByProject(projectId);
+      setProjectTeams(teams);
+    } catch (error) {
+      console.error('Error fetching teams:', error);
+      toast({
+        title: "Error",
+        description: "Failed to fetch teams",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoadingTeams(false);
+    }
+  };
+
+  // Update project selection to fetch teams
+  const handleProjectSelect = async (value: string) => {
+    const project = activeProjects.find(p => p.title === value);
+    setSelectedProject(project || null);
+    if (project) {
+      await fetchProjectTeams(project._id);
+    } else {
+      setProjectTeams([]);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-50 to-teal-100 p-6">
       <div className="max-w-6xl mx-auto">
@@ -329,7 +382,7 @@ const PresenterDashboard = () => {
           </Button>
         </div>
 
-        <Tabs defaultValue="projects" className="space-y-6">
+        <Tabs defaultValue="projects" className="space-y-6" onValueChange={handleTabChange}>
           <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="projects">Projects</TabsTrigger>
             <TabsTrigger value="presentation">Live Presentation</TabsTrigger>
@@ -439,17 +492,17 @@ const PresenterDashboard = () => {
 
           <TabsContent value="presentation" className="space-y-6">
             <div className="flex justify-between items-center mb-4">
-              <Select value={selectedProject?.title} onValueChange={(value) => {
-                const project = projects.find(p => p.title === value);
-                setSelectedProject(project);
-              }}>
+              <Select 
+                value={selectedProject?.title} 
+                onValueChange={handleProjectSelect}
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="Select Project" />
                 </SelectTrigger>
                 <SelectContent>
-                  {projects.map((project) => (
-                    <SelectItem key={project.title} value={project.title}>
-                      {project.title} ({project.class})
+                  {activeProjects.map((project) => (
+                    <SelectItem key={project._id} value={project.title}>
+                      {project.title} ({getClassName(project.class)})
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -507,13 +560,17 @@ const PresenterDashboard = () => {
                 <CardContent className="space-y-4">
                   <div>
                     <Label htmlFor="team-select">Select Presenting Team</Label>
-                    <Select value={selectedTeam} onValueChange={setSelectedTeam}>
+                    <Select 
+                      value={selectedTeam} 
+                      onValueChange={setSelectedTeam}
+                      disabled={isLoadingTeams || projectTeams.length === 0}
+                    >
                       <SelectTrigger>
-                        <SelectValue placeholder="Choose a team" />
+                        <SelectValue placeholder={projectTeams.length === 0 ? "No teams available" : "Choose a team"} />
                       </SelectTrigger>
                       <SelectContent>
-                        {teams.map((team) => (
-                          <SelectItem key={team.id} value={team.name}>
+                        {projectTeams.map((team) => (
+                          <SelectItem key={team._id} value={team._id}>
                             {team.name} ({team.members.length} members)
                           </SelectItem>
                         ))}
@@ -523,9 +580,11 @@ const PresenterDashboard = () => {
                   
                   {selectedTeam && (
                     <div className="p-3 bg-blue-50 rounded-lg">
-                      <h5 className="font-medium text-blue-900">Selected Team: {selectedTeam}</h5>
+                      <h5 className="font-medium text-blue-900">
+                        Selected Team: {projectTeams.find(t => t._id === selectedTeam)?.name}
+                      </h5>
                       <p className="text-sm text-blue-700">
-                        Members: {teams.find(t => t.name === selectedTeam)?.members.join(", ")}
+                        Members: {projectTeams.find(t => t._id === selectedTeam)?.members.join(", ")}
                       </p>
                     </div>
                   )}
@@ -544,21 +603,34 @@ const PresenterDashboard = () => {
                 <CardTitle>Teams Queue</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-3">
-                  {teams.map((team, index) => (
-                    <div key={team.id} className={`p-3 rounded-lg border ${
-                      team.name === selectedTeam ? 'bg-blue-50 border-blue-200' : 'bg-white'
-                    }`}>
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <h5 className="font-medium">{team.name}</h5>
-                          <p className="text-sm text-gray-600">Members: {team.members.join(", ")}</p>
+                {isLoadingTeams ? (
+                  <div className="text-center py-4">
+                    <p className="text-gray-500">Loading teams...</p>
+                  </div>
+                ) : projectTeams.length === 0 ? (
+                  <div className="text-center py-4">
+                    <p className="text-gray-500">No teams available for this project</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {projectTeams.map((team, index) => (
+                      <div 
+                        key={team._id} 
+                        className={`p-3 rounded-lg border ${
+                          team._id === selectedTeam ? 'bg-blue-50 border-blue-200' : 'bg-white'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <h5 className="font-medium">{team.name}</h5>
+                            <p className="text-sm text-gray-600">Members: {team.members.join(", ")}</p>
+                          </div>
+                          <span className="text-sm text-gray-500">#{index + 1}</span>
                         </div>
-                        <span className="text-sm text-gray-500">#{index + 1}</span>
                       </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>

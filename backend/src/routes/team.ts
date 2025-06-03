@@ -22,13 +22,30 @@ router.get('/class/:classId', async (req: Request, res: Response) => {
   }
 });
 
+// Get teams by project ID (public)
+router.get('/project/:projectId', async (req: Request, res: Response) => {
+  try {
+    const teams = await Team.find({ project: req.params.projectId })
+      .populate('members', 'name email usn')
+      .sort({ createdAt: -1 });
+    res.json(teams);
+  } catch (error) {
+    console.error('Error fetching teams:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // Create team (public)
 router.post('/', async (req: Request, res: Response) => {
   try {
-    const { name, description, class: classId, members } = req.body;
+    const { name, description, class: classId, project: projectId, members } = req.body;
 
     if (!classId) {
       return res.status(400).json({ error: 'Class ID is required' });
+    }
+
+    if (!projectId) {
+      return res.status(400).json({ error: 'Project ID is required' });
     }
 
     if (!Array.isArray(members) || members.length === 0) {
@@ -36,9 +53,14 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     // Get the project to check team size
-    const project = await Project.findOne({ class: classId });
+    const project = await Project.findById(projectId);
     if (!project) {
-      return res.status(400).json({ error: 'Project not found for this class' });
+      return res.status(400).json({ error: 'Project not found' });
+    }
+
+    // Verify project belongs to the class
+    if (project.class.toString() !== classId) {
+      return res.status(400).json({ error: 'Project does not belong to the specified class' });
     }
 
     if (members.length > project.teamSize) {
@@ -51,6 +73,7 @@ router.post('/', async (req: Request, res: Response) => {
       name,
       description,
       class: classId,
+      project: projectId,
       members: members // Array of USNs
     });
 

@@ -159,6 +159,7 @@ const TeamFormation = () => {
         name: teamName,
         description: `Team for ${selectedProject.title}`,
         class: selectedClass._id,
+        project: selectedProject._id,
         members: teamMembers
       });
 

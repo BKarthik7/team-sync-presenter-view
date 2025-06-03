@@ -5,6 +5,7 @@ export interface ITeam extends mongoose.Document {
   name: string;
   description: string;
   class: mongoose.Types.ObjectId;
+  project: mongoose.Types.ObjectId;
   members: string[];
   evaluations: mongoose.Types.ObjectId[];
   createdAt: Date;
@@ -25,6 +26,11 @@ const teamSchema = new mongoose.Schema({
   class: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Class',
+    required: true
+  },
+  project: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Project',
     required: true
   },
   members: [{

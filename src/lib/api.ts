@@ -156,6 +156,10 @@ export const teamAPI = {
     const response = await api.get(`/teams/class/${classId}`);
     return response.data;
   },
+  getByProject: async (projectId: string) => {
+    const response = await api.get(`/teams/project/${projectId}`);
+    return response.data;
+  },
   delete: async (teamId: string) => {
     const response = await api.delete(`/teams/${teamId}`);
     return response.data;
