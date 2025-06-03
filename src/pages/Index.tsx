@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Users, PresentationChart, UserCheck } from "lucide-react";
+import { Users, Presentation, UserCheck } from "lucide-react";
 
 const Index = () => {
   const [selectedRole, setSelectedRole] = useState<string | null>(null);
@@ -19,7 +19,7 @@ const Index = () => {
       id: "presenter-controller",
       title: "Presenter/Controller",
       description: "Create projects, manage presentations, and view evaluations",
-      icon: PresentationChart,
+      icon: Presentation,
       color: "bg-green-500 hover:bg-green-600"
     },
     {
