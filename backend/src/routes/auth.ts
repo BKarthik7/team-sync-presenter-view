@@ -176,7 +176,7 @@ router.post('/create-teacher', isAuthenticated, async (req: Request, res: Respon
       return res.status(403).json({ error: 'Not authorized' });
     }
 
-    const { email, password } = (req as any).body;
+    const { email, password, name } = (req as any).body;
 
     // Check if user already exists
     const existingUser = await User.findOne({ email });
@@ -192,6 +192,7 @@ router.post('/create-teacher', isAuthenticated, async (req: Request, res: Respon
     const teacher = new User({
       email,
       password: hashedPassword,
+      name,
       role: 'teacher'
     });
 
@@ -201,10 +202,12 @@ router.post('/create-teacher', isAuthenticated, async (req: Request, res: Respon
       user: { 
         _id: teacher._id,
         email: teacher.email,
+        name: teacher.name,
         role: teacher.role
       }
     });
   } catch (error) {
+    console.error('Error creating teacher:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });

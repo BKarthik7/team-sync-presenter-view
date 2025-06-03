@@ -1,29 +1,22 @@
-import { Router, Request } from 'express';
+import { Router, Request, Response } from 'express';
 import { Types } from 'mongoose';
 import { AuthenticatedRequest } from '../types';
 import { Class } from '../models/Class';
 import { pusher } from '../index';
+import { isAuthenticated } from '../middleware/auth';
 
 const router = Router();
 
-// Type guard function to check if request is authenticated
-function isAuthenticatedRequest(req: Request): req is AuthenticatedRequest {
-  return 'user' in req;
-}
-
 // Create a new class
-router.post('/', async (req: Request, res) => {
-  if (!isAuthenticatedRequest(req)) {
-    return res.status(401).json({ message: 'Unauthorized' });
-  }
-
+router.post('/', isAuthenticated, async (req: Request, res: Response) => {
+  const authReq = req as AuthenticatedRequest;
   try {
-    const { name, semester, students } = req.body as { name: string; semester: string; students?: string[] };
+    const { name, semester, students } = authReq.body as { name: string; semester: string; students?: string[] };
     const class_ = new Class({
       name,
       semester,
       students: students || [],
-      createdBy: req.user._id
+      createdBy: authReq.user._id
     });
 
     await class_.save();
@@ -34,13 +27,10 @@ router.post('/', async (req: Request, res) => {
 });
 
 // Get all classes for a user
-router.get('/', async (req: Request, res) => {
-  if (!isAuthenticatedRequest(req)) {
-    return res.status(401).json({ message: 'Unauthorized' });
-  }
-
+router.get('/', isAuthenticated, async (req: Request, res: Response) => {
+  const authReq = req as AuthenticatedRequest;
   try {
-    const classes = await Class.find({ createdBy: req.user._id });
+    const classes = await Class.find({ createdBy: authReq.user._id });
     res.json(classes);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
@@ -48,23 +38,20 @@ router.get('/', async (req: Request, res) => {
 });
 
 // Get a specific class
-router.get('/:id', async (req: Request, res) => {
-  if (!isAuthenticatedRequest(req)) {
-    return res.status(401).json({ message: 'Unauthorized' });
-  }
-
+router.get('/:id', isAuthenticated, async (req: Request, res: Response) => {
+  const authReq = req as AuthenticatedRequest;
   try {
-    const { id } = req.params as { id: string };
+    const { id } = authReq.params as { id: string };
     const class_ = await Class.findById(id);
     if (!class_) {
       return res.status(404).json({ message: 'Class not found' });
     }
 
-    if (!Types.ObjectId.isValid(class_.createdBy) || !Types.ObjectId.isValid(req.user._id)) {
+    if (!Types.ObjectId.isValid(class_.createdBy) || !Types.ObjectId.isValid(authReq.user._id)) {
       return res.status(400).json({ message: 'Invalid ObjectId' });
     }
 
-    if (class_.createdBy.toString() !== req.user._id.toString()) {
+    if (class_.createdBy.toString() !== authReq.user._id.toString()) {
       return res.status(403).json({ message: 'Not authorized to access this class' });
     }
 
@@ -75,29 +62,26 @@ router.get('/:id', async (req: Request, res) => {
 });
 
 // Update a class
-router.put('/:id', async (req: Request, res) => {
-  if (!isAuthenticatedRequest(req)) {
-    return res.status(401).json({ message: 'Unauthorized' });
-  }
-
+router.put('/:id', isAuthenticated, async (req: Request, res: Response) => {
+  const authReq = req as AuthenticatedRequest;
   try {
-    const { id } = req.params as { id: string };
+    const { id } = authReq.params as { id: string };
     const class_ = await Class.findById(id);
     if (!class_) {
       return res.status(404).json({ message: 'Class not found' });
     }
 
-    if (!Types.ObjectId.isValid(class_.createdBy) || !Types.ObjectId.isValid(req.user._id)) {
+    if (!Types.ObjectId.isValid(class_.createdBy) || !Types.ObjectId.isValid(authReq.user._id)) {
       return res.status(400).json({ message: 'Invalid ObjectId' });
     }
 
-    if (class_.createdBy.toString() !== req.user._id.toString()) {
+    if (class_.createdBy.toString() !== authReq.user._id.toString()) {
       return res.status(403).json({ message: 'Not authorized to update this class' });
     }
 
     const updatedClass = await Class.findByIdAndUpdate(
       id,
-      { $set: req.body },
+      { $set: authReq.body },
       { new: true }
     );
     res.json(updatedClass);
@@ -107,23 +91,20 @@ router.put('/:id', async (req: Request, res) => {
 });
 
 // Delete a class
-router.delete('/:id', async (req: Request, res) => {
-  if (!isAuthenticatedRequest(req)) {
-    return res.status(401).json({ message: 'Unauthorized' });
-  }
-
+router.delete('/:id', isAuthenticated, async (req: Request, res: Response) => {
+  const authReq = req as AuthenticatedRequest;
   try {
-    const { id } = req.params as { id: string };
+    const { id } = authReq.params as { id: string };
     const class_ = await Class.findById(id);
     if (!class_) {
       return res.status(404).json({ message: 'Class not found' });
     }
 
-    if (!Types.ObjectId.isValid(class_.createdBy) || !Types.ObjectId.isValid(req.user._id)) {
+    if (!Types.ObjectId.isValid(class_.createdBy) || !Types.ObjectId.isValid(authReq.user._id)) {
       return res.status(400).json({ message: 'Invalid ObjectId' });
     }
 
-    if (class_.createdBy.toString() !== req.user._id.toString()) {
+    if (class_.createdBy.toString() !== authReq.user._id.toString()) {
       return res.status(403).json({ message: 'Not authorized to delete this class' });
     }
 
@@ -135,24 +116,21 @@ router.delete('/:id', async (req: Request, res) => {
 });
 
 // Add a student to a class
-router.post('/:id/students', async (req: Request, res) => {
-  if (!isAuthenticatedRequest(req)) {
-    return res.status(401).json({ message: 'Unauthorized' });
-  }
-
+router.post('/:id/students', isAuthenticated, async (req: Request, res: Response) => {
+  const authReq = req as AuthenticatedRequest;
   try {
-    const { id } = req.params as { id: string };
-    const { studentId } = req.body as { studentId: string };
+    const { id } = authReq.params as { id: string };
+    const { studentId } = authReq.body as { studentId: string };
     const class_ = await Class.findById(id);
     if (!class_) {
       return res.status(404).json({ message: 'Class not found' });
     }
 
-    if (!Types.ObjectId.isValid(class_.createdBy) || !Types.ObjectId.isValid(req.user._id)) {
+    if (!Types.ObjectId.isValid(class_.createdBy) || !Types.ObjectId.isValid(authReq.user._id)) {
       return res.status(400).json({ message: 'Invalid ObjectId' });
     }
 
-    if (class_.createdBy.toString() !== req.user._id.toString()) {
+    if (class_.createdBy.toString() !== authReq.user._id.toString()) {
       return res.status(403).json({ message: 'Not authorized to modify this class' });
     }
 
@@ -173,23 +151,20 @@ router.post('/:id/students', async (req: Request, res) => {
 });
 
 // Remove a student from a class
-router.delete('/:id/students/:studentId', async (req: Request, res) => {
-  if (!isAuthenticatedRequest(req)) {
-    return res.status(401).json({ message: 'Unauthorized' });
-  }
-
+router.delete('/:id/students/:studentId', isAuthenticated, async (req: Request, res: Response) => {
+  const authReq = req as AuthenticatedRequest;
   try {
-    const { id, studentId } = req.params as { id: string; studentId: string };
+    const { id, studentId } = authReq.params as { id: string; studentId: string };
     const class_ = await Class.findById(id);
     if (!class_) {
       return res.status(404).json({ message: 'Class not found' });
     }
 
-    if (!Types.ObjectId.isValid(class_.createdBy) || !Types.ObjectId.isValid(req.user._id)) {
+    if (!Types.ObjectId.isValid(class_.createdBy) || !Types.ObjectId.isValid(authReq.user._id)) {
       return res.status(400).json({ message: 'Invalid ObjectId' });
     }
 
-    if (class_.createdBy.toString() !== req.user._id.toString()) {
+    if (class_.createdBy.toString() !== authReq.user._id.toString()) {
       return res.status(403).json({ message: 'Not authorized to modify this class' });
     }
 

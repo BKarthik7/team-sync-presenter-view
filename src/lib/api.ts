@@ -65,7 +65,7 @@ export const authAPI = {
   },
 
   createTeacher: async (email: string, password: string, name: string) => {
-    const response = await api.post<Teacher>('/auth/teacher', { email, password, name });
+    const response = await api.post<Teacher>('/auth/create-teacher', { email, password, name });
     return response.data;
   },
 

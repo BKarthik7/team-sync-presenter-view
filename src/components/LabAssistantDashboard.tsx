@@ -7,6 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from '../hooks/useAuth';
 import { authAPI, classAPI } from '../lib/api';
 import { Plus, Trash2, Users, GraduationCap } from "lucide-react";
+import { useNavigate } from 'react-router-dom';
 
 interface Teacher {
   _id: string;
@@ -23,6 +24,8 @@ interface Class {
 }
 
 const LabAssistantDashboard = () => {
+  const { user, loading, logout } = useAuth();
+  const navigate = useNavigate();
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [classes, setClasses] = useState<Class[]>([]);
   const [teacherCreationError, setTeacherCreationError] = useState<string | null>(null);
@@ -40,6 +43,18 @@ const LabAssistantDashboard = () => {
     password: "", 
     department: "" 
   });
+
+  useEffect(() => {
+    if (!loading && !user) {
+      navigate('/login');
+      return;
+    }
+
+    if (user?.role === 'lab_instructor') {
+      fetchTeachers();
+      fetchClasses();
+    }
+  }, [user, loading, navigate]);
 
   const createTeacher = async () => {
     try {
@@ -88,11 +103,8 @@ const LabAssistantDashboard = () => {
 
   const fetchTeachers = async () => {
     try {
-      const response = await authAPI.getCurrentUser();
-      if (response.role === 'lab_instructor') {
-        const teachers = await authAPI.getTeachers();
-        setTeachers(teachers);
-      }
+      const teachers = await authAPI.getTeachers();
+      setTeachers(teachers);
     } catch (error) {
       console.error('Error fetching teachers:', error);
     }
@@ -126,13 +138,6 @@ const LabAssistantDashboard = () => {
       alert('Failed to delete class');
     }
   };
-
-  useEffect(() => {
-    fetchTeachers();
-    fetchClasses();
-  }, []);
-
-  const { logout } = useAuth();
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-6">
