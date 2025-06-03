@@ -1,5 +1,5 @@
-
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,12 +7,17 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Play, Pause, Square, Clock, Users, BarChart3 } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 
 const PresenterDashboard = () => {
   const [currentProject, setCurrentProject] = useState(null);
   const [presentationTimer, setPresentationTimer] = useState(0);
   const [isTimerRunning, setIsTimerRunning] = useState(false);
   const [selectedTeam, setSelectedTeam] = useState("");
+  const [projectName, setProjectName] = useState("");
+  const [selectedClass, setSelectedClass] = useState("");
+  const navigate = useNavigate();
+  const { toast } = useToast();
 
   const [projects] = useState([
     { id: 1, name: "AI in Healthcare", class: "CS-A", teams: 3, status: "active" },
@@ -29,6 +34,29 @@ const PresenterDashboard = () => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const createProject = () => {
+    if (!projectName || !selectedClass) {
+      toast({
+        title: "Error",
+        description: "Please fill in all fields before creating a project.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    console.log(`Creating project: ${projectName} for class: ${selectedClass}`);
+    
+    toast({
+      title: "Project Created!",
+      description: `Project "${projectName}" has been created for ${selectedClass}. Redirecting to team formation...`,
+    });
+
+    // Navigate to team formation page after a short delay
+    setTimeout(() => {
+      navigate("/team-formation");
+    }, 2000);
   };
 
   const startPresentation = () => {
@@ -72,11 +100,16 @@ const PresenterDashboard = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <Label htmlFor="project-name">Project Name</Label>
-                    <Input id="project-name" placeholder="Enter project name" />
+                    <Input 
+                      id="project-name" 
+                      placeholder="Enter project name"
+                      value={projectName}
+                      onChange={(e) => setProjectName(e.target.value)}
+                    />
                   </div>
                   <div>
                     <Label htmlFor="class-select">Select Class</Label>
-                    <Select>
+                    <Select value={selectedClass} onValueChange={setSelectedClass}>
                       <SelectTrigger>
                         <SelectValue placeholder="Choose a class" />
                       </SelectTrigger>
@@ -87,7 +120,9 @@ const PresenterDashboard = () => {
                     </Select>
                   </div>
                 </div>
-                <Button className="w-full">Create Project & Send Team Formation Link</Button>
+                <Button onClick={createProject} className="w-full">
+                  Create Project & Send Team Formation Link
+                </Button>
               </CardContent>
             </Card>
 
