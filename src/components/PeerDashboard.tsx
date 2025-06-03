@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Clock, Users, Star, Send } from "lucide-react";
+import { useAuth } from '../hooks/useAuth';
 
 const PeerDashboard = () => {
   const [userUSN] = useState("1RV21CS001");
@@ -46,11 +47,19 @@ const PeerDashboard = () => {
     setShowEvaluation(true);
   };
 
+  const { logout } = useAuth();
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 to-pink-100 p-6">
       <div className="max-w-4xl mx-auto">
+        <div className="flex justify-between items-center mb-6">
+          <div>
+            <h1 className="text-2xl font-bold">Peer Dashboard</h1>
+            <p className="text-gray-600">Welcome, {userUSN}</p>
+          </div>
+          <Button onClick={logout} variant="destructive">Logout</Button>
+        </div>
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-800 mb-2">Peer Student Dashboard</h1>
           <p className="text-gray-600">USN: {userUSN} • Team: {currentTeam}</p>
         </div>
 

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,9 +8,26 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Play, Pause, Square, Clock, Users, BarChart3 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { projectAPI, classAPI } from '@/lib/api';
+
+interface Project {
+  _id: string;
+  name: string;
+  class: string;
+  status: 'active' | 'completed';
+  createdAt: Date;
+}
+
+interface Class {
+  _id: string;
+  name: string;
+  semester: string;
+  students: string[];
+}
 
 const PresenterDashboard = () => {
-  const [currentProject, setCurrentProject] = useState(null);
+  const [currentProject, setCurrentProject] = useState<Project | null>(null);
+  const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [presentationTimer, setPresentationTimer] = useState(0);
   const [isTimerRunning, setIsTimerRunning] = useState(false);
   const [selectedTeam, setSelectedTeam] = useState("");
@@ -19,10 +36,31 @@ const PresenterDashboard = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  const [projects] = useState([
-    { id: 1, name: "AI in Healthcare", class: "CS-A", teams: 3, status: "active" },
-    { id: 2, name: "Web Development Trends", class: "IT-B", teams: 2, status: "completed" }
-  ]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [classes, setClasses] = useState<Class[]>([]);
+
+  useEffect(() => {
+    const fetchProjects = async () => {
+      try {
+        const projects = await projectAPI.getProjects();
+        setProjects(projects);
+      } catch (error) {
+        console.error('Error fetching projects:', error);
+      }
+    };
+
+    const fetchClasses = async () => {
+      try {
+        const classes = await classAPI.getClasses();
+        setClasses(classes);
+      } catch (error) {
+        console.error('Error fetching classes:', error);
+      }
+    };
+
+    fetchProjects();
+    fetchClasses();
+  }, []);
 
   const [teams] = useState([
     { id: 1, name: "Team Alpha", members: ["1RV21CS001", "1RV21CS002"], project: "AI in Healthcare" },
@@ -36,7 +74,7 @@ const PresenterDashboard = () => {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const createProject = () => {
+  const createProject = async () => {
     if (!projectName || !selectedClass) {
       toast({
         title: "Error",
@@ -46,17 +84,28 @@ const PresenterDashboard = () => {
       return;
     }
 
-    console.log(`Creating project: ${projectName} for class: ${selectedClass}`);
-    
-    toast({
-      title: "Project Created!",
-      description: `Project "${projectName}" has been created for ${selectedClass}. Redirecting to team formation...`,
-    });
+    try {
+      const project = await projectAPI.createProject({
+        name: projectName,
+        class: selectedClass,
+        status: 'active'
+      });
 
-    // Navigate to team formation page after a short delay
-    setTimeout(() => {
-      navigate("/team-formation");
-    }, 2000);
+      setProjects(prev => [...prev, project]);
+      toast({
+        title: "Project Created!",
+        description: `Project "${projectName}" has been created for ${selectedClass}. Redirecting to team formation...`,
+      });
+
+      // Navigate to team formation with project and class parameters
+      navigate(`/team-formation?project=${projectName}&class=${selectedClass}`);
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.response?.data?.message || "Failed to create project",
+        variant: "destructive",
+      });
+    }
   };
 
   const startPresentation = () => {
@@ -114,8 +163,11 @@ const PresenterDashboard = () => {
                         <SelectValue placeholder="Choose a class" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="cs-a">CS-A (6th Semester)</SelectItem>
-                        <SelectItem value="it-b">IT-B (4th Semester)</SelectItem>
+                        {classes.map((cls) => (
+                          <SelectItem key={cls._id} value={cls.name}>
+                            {cls.name} ({cls.semester})
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
@@ -152,6 +204,23 @@ const PresenterDashboard = () => {
           </TabsContent>
 
           <TabsContent value="presentation" className="space-y-6">
+            <div className="flex justify-between items-center mb-4">
+              <Select value={selectedProject?.name} onValueChange={(value) => {
+                const project = projects.find(p => p.name === value);
+                setSelectedProject(project);
+              }}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select Project" />
+                </SelectTrigger>
+                <SelectContent>
+                  {projects.map((project) => (
+                    <SelectItem key={project.name} value={project.name}>
+                      {project.name} ({project.class})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <div className="grid md:grid-cols-2 gap-6">
               <Card>
                 <CardHeader>
