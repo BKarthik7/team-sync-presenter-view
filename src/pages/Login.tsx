@@ -18,10 +18,11 @@ export default function Login() {
   const handleLabInstructorLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await login('admin', 'admin', 'lab_instructor');
+      await login('admin@admin.com', 'admin', 'lab_instructor');
       navigate('/dashboard');
     } catch (error) {
       console.error('Login failed:', error);
+      setError('Login failed. Please try again.');
     }
   };
 

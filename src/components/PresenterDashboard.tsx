@@ -6,17 +6,27 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Play, Pause, Square, Clock, Users, BarChart3 } from "lucide-react";
+import { Play, Pause, Square, Clock, Users, BarChart3, Copy, Check, Trash2, LogOut } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { projectAPI, classAPI } from '@/lib/api';
-
-interface Project {
-  _id: string;
-  name: string;
-  class: string;
-  status: 'active' | 'completed';
-  createdAt: Date;
-}
+import { projectAPI, classAPI, teamAPI } from '@/lib/api';
+import type { Project } from '@/lib/api';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface Class {
   _id: string;
@@ -25,25 +35,39 @@ interface Class {
   students: string[];
 }
 
+interface Team {
+  _id: string;
+  name: string;
+  members: string[];
+  project: string;
+  class: string;
+}
+
 const PresenterDashboard = () => {
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [presentationTimer, setPresentationTimer] = useState(0);
   const [isTimerRunning, setIsTimerRunning] = useState(false);
   const [selectedTeam, setSelectedTeam] = useState("");
-  const [projectName, setProjectName] = useState("");
+  const [projectTitle, setProjectTitle] = useState("");
+  const [projectDescription, setProjectDescription] = useState("");
+  const [projectTeamSize, setProjectTeamSize] = useState(2);
   const [selectedClass, setSelectedClass] = useState("");
   const navigate = useNavigate();
   const { toast } = useToast();
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [classes, setClasses] = useState<Class[]>([]);
+  const [selectedProjectTeams, setSelectedProjectTeams] = useState<Team[]>([]);
+  const [isTeamsModalOpen, setIsTeamsModalOpen] = useState(false);
+  const [copiedLink, setCopiedLink] = useState<string | null>(null);
+  const [teamToDelete, setTeamToDelete] = useState<Team | null>(null);
 
   useEffect(() => {
     const fetchProjects = async () => {
       try {
-        const projects = await projectAPI.getProjects();
-        setProjects(projects);
+        const response = await projectAPI.getProjects();
+        setProjects(response);
       } catch (error) {
         console.error('Error fetching projects:', error);
       }
@@ -75,7 +99,7 @@ const PresenterDashboard = () => {
   };
 
   const createProject = async () => {
-    if (!projectName || !selectedClass) {
+    if (!projectTitle || !projectDescription || !projectTeamSize || !selectedClass) {
       toast({
         title: "Error",
         description: "Please fill in all fields before creating a project.",
@@ -85,20 +109,33 @@ const PresenterDashboard = () => {
     }
 
     try {
+      // Find the class object to get its ID
+      const classObj = classes.find(c => c.name === selectedClass);
+      if (!classObj) {
+        toast({
+          title: "Error",
+          description: "Selected class not found",
+          variant: "destructive",
+        });
+        return;
+      }
+
       const project = await projectAPI.createProject({
-        name: projectName,
-        class: selectedClass,
+        title: projectTitle,
+        description: projectDescription,
+        teamSize: projectTeamSize,
+        class: classObj._id, // Store the class ID instead of name
         status: 'active'
       });
 
       setProjects(prev => [...prev, project]);
       toast({
         title: "Project Created!",
-        description: `Project "${projectName}" has been created for ${selectedClass}. Redirecting to team formation...`,
+        description: `Project "${projectTitle}" has been created for ${selectedClass}. Redirecting to team formation...`,
       });
 
-      // Navigate to team formation with project and class parameters
-      navigate(`/team-formation?project=${projectName}&class=${selectedClass}`);
+      // Navigate to team formation with project and class IDs
+      navigate(`/team-formation?projectId=${project._id}&classId=${classObj._id}`);
     } catch (error: any) {
       toast({
         title: "Error",
@@ -124,12 +161,133 @@ const PresenterDashboard = () => {
     console.log("Presentation ended, sending evaluation forms");
   };
 
+  const handleManageTeams = async (project: Project) => {
+    // Open modal immediately
+    setSelectedProject(project);
+    setIsTeamsModalOpen(true);
+    
+    // Then try to fetch teams
+    try {
+      if (!project.class) {
+        toast({
+          title: "Error",
+          description: "Project is not associated with a class",
+          variant: "destructive",
+        });
+        return;
+      }
+      const response = await teamAPI.getByClass(project.class);
+      setSelectedProjectTeams(response);
+    } catch (error) {
+      console.error('Error fetching teams:', error);
+      toast({
+        title: "Warning",
+        description: "Could not fetch teams, but you can still share the team formation link",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const copyToClipboard = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedLink(text);
+      toast({
+        title: "Success",
+        description: "Link copied to clipboard!",
+      });
+      setTimeout(() => setCopiedLink(null), 2000);
+    } catch (err) {
+      toast({
+        title: "Error",
+        description: "Failed to copy link",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleUpdateClassTeacher = async (classId: string) => {
+    try {
+      // Get current user's ID from localStorage or context
+      const user = JSON.parse(localStorage.getItem('user') || '{}');
+      if (!user._id) {
+        toast({
+          title: "Error",
+          description: "User information not found. Please log in again.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      await classAPI.updateTeacher(classId, user._id);
+      toast({
+        title: "Success",
+        description: "Class teacher updated successfully",
+      });
+    } catch (error: any) {
+      console.error('Error updating class teacher:', error);
+      toast({
+        title: "Error",
+        description: error.response?.data?.error || "Failed to update class teacher",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleDeleteTeam = async (teamId: string) => {
+    try {
+      console.log('Attempting to delete team:', teamId);
+      await teamAPI.delete(teamId);
+      console.log('Team deleted successfully');
+      
+      // Update local state
+      setSelectedProjectTeams(prevTeams => prevTeams.filter(team => team._id !== teamId));
+      toast({
+        title: "Success",
+        description: "Team deleted successfully",
+      });
+    } catch (error: any) {
+      console.error('Error deleting team:', error);
+      const errorMessage = error.response?.data?.error || 'Failed to delete team';
+      toast({
+        title: "Error",
+        description: errorMessage,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleLogout = () => {
+    // Clear user data from localStorage
+    localStorage.removeItem('user');
+    localStorage.removeItem('token');
+    
+    // Show success message
+    toast({
+      title: "Logged out successfully",
+      description: "You have been logged out of your account.",
+    });
+    
+    // Redirect to login page
+    navigate('/login');
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-50 to-teal-100 p-6">
       <div className="max-w-6xl mx-auto">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-800 mb-2">Presenter/Controller Dashboard</h1>
-          <p className="text-gray-600">Manage projects, presentations, and evaluations</p>
+        <div className="mb-8 flex justify-between items-center">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-800 mb-2">Presenter/Controller Dashboard</h1>
+            <p className="text-gray-600">Manage projects, presentations, and evaluations</p>
+          </div>
+          <Button 
+            variant="outline" 
+            onClick={handleLogout}
+            className="flex items-center gap-2"
+          >
+            <LogOut className="h-4 w-4" />
+            Logout
+          </Button>
         </div>
 
         <Tabs defaultValue="projects" className="space-y-6">
@@ -148,12 +306,12 @@ const PresenterDashboard = () => {
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <Label htmlFor="project-name">Project Name</Label>
+                    <Label htmlFor="project-title">Project Title</Label>
                     <Input 
-                      id="project-name" 
-                      placeholder="Enter project name"
-                      value={projectName}
-                      onChange={(e) => setProjectName(e.target.value)}
+                      id="project-title" 
+                      placeholder="Enter project title"
+                      value={projectTitle}
+                      onChange={(e) => setProjectTitle(e.target.value)}
                     />
                   </div>
                   <div>
@@ -172,6 +330,38 @@ const PresenterDashboard = () => {
                     </Select>
                   </div>
                 </div>
+                <div className="grid grid-cols-1 gap-4">
+                  <div>
+                    <Label htmlFor="project-description">Project Description</Label>
+                    <Input 
+                      id="project-description" 
+                      placeholder="Enter project description"
+                      value={projectDescription}
+                      onChange={(e) => setProjectDescription(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="team-size">Maximum Team Size</Label>
+                    <Input 
+                      id="team-size" 
+                      type="number"
+                      min="1"
+                      placeholder="Enter maximum team size"
+                      value={projectTeamSize || ''}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        if (value === '') {
+                          setProjectTeamSize(0);
+                        } else {
+                          const numValue = parseInt(value);
+                          if (!isNaN(numValue)) {
+                            setProjectTeamSize(numValue);
+                          }
+                        }
+                      }}
+                    />
+                  </div>
+                </div>
                 <Button onClick={createProject} className="w-full">
                   Create Project & Send Team Formation Link
                 </Button>
@@ -185,17 +375,22 @@ const PresenterDashboard = () => {
               <CardContent>
                 <div className="space-y-4">
                   {projects.map((project) => (
-                    <div key={project.id} className="p-4 bg-white rounded-lg border flex items-center justify-between">
+                    <div key={project._id} className="p-4 bg-white rounded-lg border flex items-center justify-between">
                       <div>
-                        <h4 className="font-semibold">{project.name}</h4>
-                        <p className="text-sm text-gray-600">Class: {project.class} • Teams: {project.teams}</p>
+                        <h4 className="font-semibold">{project.title}</h4>
+                        <p className="text-sm text-gray-600">Class: {project.class} • Teams: {project.teams?.length || 0}</p>
                         <span className={`inline-block px-2 py-1 text-xs rounded ${
                           project.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
                         }`}>
                           {project.status}
                         </span>
                       </div>
-                      <Button variant="outline">Manage</Button>
+                      <Button 
+                        variant="outline" 
+                        onClick={() => handleManageTeams(project)}
+                      >
+                        Manage
+                      </Button>
                     </div>
                   ))}
                 </div>
@@ -205,8 +400,8 @@ const PresenterDashboard = () => {
 
           <TabsContent value="presentation" className="space-y-6">
             <div className="flex justify-between items-center mb-4">
-              <Select value={selectedProject?.name} onValueChange={(value) => {
-                const project = projects.find(p => p.name === value);
+              <Select value={selectedProject?.title} onValueChange={(value) => {
+                const project = projects.find(p => p.title === value);
                 setSelectedProject(project);
               }}>
                 <SelectTrigger>
@@ -214,8 +409,8 @@ const PresenterDashboard = () => {
                 </SelectTrigger>
                 <SelectContent>
                   {projects.map((project) => (
-                    <SelectItem key={project.name} value={project.name}>
-                      {project.name} ({project.class})
+                    <SelectItem key={project.title} value={project.title}>
+                      {project.title} ({project.class})
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -372,6 +567,115 @@ const PresenterDashboard = () => {
           </TabsContent>
         </Tabs>
       </div>
+
+      <Dialog open={isTeamsModalOpen} onOpenChange={setIsTeamsModalOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Project Teams</DialogTitle>
+            <DialogDescription>
+              Share the team formation link and view existing teams
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-6">
+            <div className="p-4 bg-blue-50 rounded-lg">
+              <h4 className="font-semibold mb-2">Team Formation Link</h4>
+              <p className="text-sm text-blue-600 mb-3">
+                Share this link with students to let them form teams for this project
+              </p>
+              <div className="flex gap-2">
+                <Input 
+                  readOnly 
+                  value={selectedProject ? `${window.location.origin}/team-formation?projectId=${selectedProject._id}&classId=${selectedProject.class}` : ''}
+                  className="font-mono text-sm"
+                />
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => {
+                    if (selectedProject) {
+                      copyToClipboard(`${window.location.origin}/team-formation?projectId=${selectedProject._id}&classId=${selectedProject.class}`);
+                    }
+                  }}
+                >
+                  {selectedProject && copiedLink === `${window.location.origin}/team-formation?projectId=${selectedProject._id}&classId=${selectedProject.class}` ? (
+                    <Check className="h-4 w-4" />
+                  ) : (
+                    <Copy className="h-4 w-4" />
+                  )}
+                </Button>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h4 className="font-semibold">Existing Teams</h4>
+                <span className="text-sm text-gray-500">
+                  {selectedProjectTeams.length} team{selectedProjectTeams.length !== 1 ? 's' : ''}
+                </span>
+              </div>
+
+              {selectedProjectTeams.length === 0 ? (
+                <div className="p-4 bg-gray-50 rounded-lg text-center">
+                  <p className="text-gray-500">No teams have been formed yet</p>
+                  <p className="text-sm text-gray-400 mt-1">
+                    Share the team formation link above to get started
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {selectedProjectTeams.map((team) => (
+                    <div key={team._id} className="p-3 bg-white rounded-lg border">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <h5 className="font-medium">{team.name}</h5>
+                          <p className="text-sm text-gray-600">
+                            Members: {team.members.join(", ")}
+                          </p>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button 
+                            variant="ghost" 
+                            size="sm"
+                            onClick={() => setTeamToDelete(team)}
+                          >
+                            <Trash2 className="h-4 w-4 text-red-500" />
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={!!teamToDelete} onOpenChange={() => setTeamToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete the team "{teamToDelete?.name}". This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (teamToDelete) {
+                  handleDeleteTeam(teamToDelete._id);
+                  setTeamToDelete(null);
+                }
+              }}
+              className="bg-red-500 hover:bg-red-600"
+            >
+              Delete Team
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

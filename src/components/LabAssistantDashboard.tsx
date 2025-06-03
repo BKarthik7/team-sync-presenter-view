@@ -103,8 +103,8 @@ const LabAssistantDashboard = () => {
 
   const fetchTeachers = async () => {
     try {
-      const teachers = await authAPI.getTeachers();
-      setTeachers(teachers);
+        const teachers = await authAPI.getTeachers();
+        setTeachers(teachers);
     } catch (error) {
       console.error('Error fetching teachers:', error);
     }

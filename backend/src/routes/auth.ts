@@ -50,7 +50,7 @@ router.post('/login', async (req: Request, res: Response) => {
     const { email, password } = (req as any).body;
     
     // Special case for admin/admin
-    if (email === 'admin' && password === 'admin') {
+    if (email === 'admin@admin.com' && password === 'admin') {
       try {
         const adminUser = await User.findOne({ email: 'admin@admin.com', role: 'lab_instructor' });
         
@@ -123,7 +123,12 @@ router.post('/login', async (req: Request, res: Response) => {
 router.post('/teacher/login', async (req: Request, res: Response) => {
   try {
     const { email, password } = (req as any).body;
-    const user = await User.findOne({ email, role: 'teacher' });
+    
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required' });
+    }
+
+    const user = await User.findOne({ email, role: 'teacher' }).select('+password');
     
     if (!user) {
       return res.status(401).json({ error: 'Invalid credentials' });
@@ -140,8 +145,17 @@ router.post('/teacher/login', async (req: Request, res: Response) => {
       { expiresIn: '24h' }
     );
 
-    res.json({ user, token });
+    res.json({ 
+      user: {
+        _id: user._id,
+        email: user.email,
+        name: user.name,
+        role: user.role
+      }, 
+      token 
+    });
   } catch (error) {
+    console.error('Teacher login error:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });

@@ -1,6 +1,5 @@
 import express, { Response, Request } from 'express';
 import { Project } from '../models/Project';
-import { Class } from '../models/Class';
 import { isAuthenticated } from '../middleware/auth';
 import { AuthenticatedRequest } from '../types';
 
@@ -10,7 +9,7 @@ const router = express.Router();
 router.get('/', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const projects = await Project.find()
-      .populate('class', 'name semester')
+      .populate('createdBy', 'name email')
       .sort({ createdAt: -1 });
     res.json(projects);
   } catch (error) {
@@ -19,10 +18,36 @@ router.get('/', isAuthenticated, async (req: Request, res: Response) => {
   }
 });
 
-// Get project by ID (public)
+// Create a new project (protected)
+router.post('/', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const { title, description, teamSize, class: classId } = req.body;
+
+    const project = new Project({
+      title,
+      description,
+      teamSize,
+      class: classId,
+      createdBy: authReq.user._id
+    });
+
+    await project.save();
+    await project.populate('createdBy', 'name email');
+    await project.populate('class', 'name semester');
+    
+    res.status(201).json(project);
+  } catch (error) {
+    console.error('Error creating project:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get a single project (public)
 router.get('/:id', async (req: Request, res: Response) => {
   try {
     const project = await Project.findById(req.params.id)
+      .populate('createdBy', 'name email')
       .populate('class', 'name semester');
     
     if (!project) {
@@ -36,65 +61,39 @@ router.get('/:id', async (req: Request, res: Response) => {
   }
 });
 
-// Create project (protected)
-router.post('/', isAuthenticated, async (req: Request, res: Response) => {
-  try {
-    const authReq = req as AuthenticatedRequest;
-    const { title, description, teamSize, class: classId } = req.body;
-
-    const project = new Project({
-      title,
-      description,
-      teamSize,
-      class: classId,
-      status: 'active'
-    });
-
-    await project.save();
-    await project.populate('class', 'name semester');
-    
-    res.status(201).json(project);
-  } catch (error) {
-    console.error('Error creating project:', error);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// Update project (protected)
+// Update a project (protected)
 router.put('/:id', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
+    const { title, description, teamSize, status } = req.body;
+
     const project = await Project.findById(req.params.id);
     
     if (!project) {
       return res.status(404).json({ error: 'Project not found' });
     }
 
-    // Get the class to check teacher permissions
-    const class_ = await Class.findById(project.class);
-    if (!class_) {
-      return res.status(404).json({ error: 'Class not found' });
+    // Only allow the creator to update the project
+    if (project.createdBy.toString() !== authReq.user._id.toString()) {
+      return res.status(403).json({ error: 'Not authorized' });
     }
 
-    // Check if user is the teacher of the class
-    if (class_.teacher.toString() !== authReq.user._id.toString()) {
-      return res.status(403).json({ error: 'Not authorized to update this project' });
-    }
+    project.title = title || project.title;
+    project.description = description || project.description;
+    project.teamSize = teamSize || project.teamSize;
+    project.status = status || project.status;
 
-    const updatedProject = await Project.findByIdAndUpdate(
-      req.params.id,
-      { $set: req.body },
-      { new: true }
-    ).populate('class', 'name semester');
-
-    res.json(updatedProject);
+    await project.save();
+    await project.populate('createdBy', 'name email');
+    
+    res.json(project);
   } catch (error) {
     console.error('Error updating project:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });
 
-// Delete project (protected)
+// Delete a project (protected)
 router.delete('/:id', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
@@ -104,15 +103,9 @@ router.delete('/:id', isAuthenticated, async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Project not found' });
     }
 
-    // Get the class to check teacher permissions
-    const class_ = await Class.findById(project.class);
-    if (!class_) {
-      return res.status(404).json({ error: 'Class not found' });
-    }
-
-    // Check if user is the teacher of the class
-    if (class_.teacher.toString() !== authReq.user._id.toString()) {
-      return res.status(403).json({ error: 'Not authorized to delete this project' });
+    // Only allow the creator to delete the project
+    if (project.createdBy.toString() !== authReq.user._id.toString()) {
+      return res.status(403).json({ error: 'Not authorized' });
     }
 
     await project.deleteOne();

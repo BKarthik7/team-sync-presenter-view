@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { useParams, useSearchParams, useNavigate } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -6,19 +5,18 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Users, Plus, Trash2 } from "lucide-react";
-import { teamAPI } from '../lib/api';
+import { teamAPI, classAPI, projectAPI } from '../lib/api';
 import { useAuth } from '../hooks/useAuth';
-import api from '@/lib/api';
+import { useToast } from "@/hooks/use-toast";
+import { Toaster } from "@/components/ui/toaster";
 
-const logout = async () => {
-  try {
-    await api.post('/auth/logout');
-    localStorage.removeItem('token');
-    navigate('/login');
-  } catch (error) {
-    console.error('Logout failed:', error);
-  }
-};
+interface Team {
+  _id: string;
+  name: string;
+  members: string[];
+  class: string;
+  description: string;
+}
 
 interface Class {
   _id: string;
@@ -29,31 +27,28 @@ interface Class {
 
 interface Project {
   _id: string;
-  name: string;
-  class: string;
-  status: 'active' | 'completed';
+  title: string;
+  description: string;
+  teamSize: number;
+  class?: string;
+  status: 'active' | 'completed' | 'archived';
   createdAt: Date;
+  createdBy?: {
+    _id: string;
+    name: string;
+    email: string;
+  };
 }
 
 const TeamFormation = () => {
-  const { user } = useAuth();
   const [studentUSN, setStudentUSN] = useState("");
   const [teamName, setTeamName] = useState("");
   const [teamMembers, setTeamMembers] = useState<string[]>([]);
-  const [projectName, setProjectName] = useState("");
+  const [existingTeams, setExistingTeams] = useState<Team[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
-
-  const logout = async () => {
-    try {
-      await api.post('/auth/logout');
-      localStorage.removeItem('token');
-      navigate('/login');
-    } catch (error) {
-      console.error('Logout failed:', error);
-    }
-  };
+  const { toast } = useToast();
 
   const [searchParams] = useSearchParams();
   const [selectedClass, setSelectedClass] = useState<Class | null>(null);
@@ -62,31 +57,36 @@ const TeamFormation = () => {
   useEffect(() => {
     const fetchClassAndProject = async () => {
       try {
-        const className = searchParams.get('class');
-        const projectName = searchParams.get('project');
+        const classId = searchParams.get('classId');
+        const projectId = searchParams.get('projectId');
 
-        if (className) {
-          const response = await api.get<Class>(`/classes/${className}`);
-          setSelectedClass(response.data);
+        if (classId) {
+          const classData = await classAPI.getClass(classId);
+          setSelectedClass(classData);
+          
+          // Fetch existing teams for this class
+          const teamsResponse = await teamAPI.getByClass(classId);
+          setExistingTeams(teamsResponse);
         }
 
-        if (projectName) {
-          const response = await api.get<Project[]>('/projects');
-          const project = response.data.find(p => p.name === projectName);
-          if (project) {
-            setSelectedProject(project);
-          }
+        if (projectId) {
+          const projectData = await projectAPI.getProject(projectId);
+          setSelectedProject(projectData);
         }
       } catch (error) {
         console.error('Error fetching class or project:', error);
-        setError('Failed to fetch class or project details');
+        toast({
+          title: "Error",
+          description: "Failed to fetch class or project details",
+          variant: "destructive",
+        });
       } finally {
         setLoading(false);
       }
     };
 
     fetchClassAndProject();
-  }, [searchParams]);
+  }, [searchParams, toast]);
 
   const addMember = () => {
     if (studentUSN && !teamMembers.includes(studentUSN)) {
@@ -99,45 +99,99 @@ const TeamFormation = () => {
     setTeamMembers(teamMembers.filter(member => member !== usn));
   };
 
+  const validateTeamMembers = () => {
+    if (!selectedClass) {
+      toast({
+        title: "Error",
+        description: "Class not found",
+        variant: "destructive",
+      });
+      return { valid: false };
+    }
+
+    // Check if any member is not in the class
+    const invalidMembers = teamMembers.filter(
+      member => !selectedClass.students.includes(member)
+    );
+    if (invalidMembers.length > 0) {
+      toast({
+        title: "Invalid Members",
+        description: `The following members are not in this class: ${invalidMembers.join(", ")}`,
+        variant: "destructive",
+      });
+      return { valid: false };
+    }
+
+    // Check if any member is already in another team
+    const duplicateMembers = teamMembers.filter(member => 
+      existingTeams.some(team => team.members.includes(member))
+    );
+    if (duplicateMembers.length > 0) {
+      toast({
+        title: "Duplicate Members",
+        description: `The following members are already in other teams: ${duplicateMembers.join(", ")}`,
+        variant: "destructive",
+      });
+      return { valid: false };
+    }
+
+    return { valid: true };
+  };
+
   const createTeam = async () => {
-    if (!teamName || teamMembers.length < 2) {
-      setError('Team name is required and must have at least 2 members');
+    if (!selectedClass || !selectedProject || !teamName || !teamMembers.length) {
+      toast({
+        title: "Error",
+        description: "Please fill in all fields",
+        variant: "destructive",
+      });
       return;
     }
 
+    // Validate team members
+    const validation = validateTeamMembers();
+    if (!validation.valid) {
+      return; // Toast is already shown in validateTeamMembers
+    }
+
     try {
-      await teamAPI.create({
+      const team = await teamAPI.create({
         name: teamName,
-        members: teamMembers,
-        projectName: projectName,
-        classId: user?.role === 'peer' ? user.usn! : user._id
+        description: `Team for ${selectedProject.title}`,
+        class: selectedClass._id,
+        members: teamMembers
       });
-      
-      // Reset form
+
+      toast({
+        title: "Success",
+        description: "Team created successfully!",
+      });
+
+      // Update existing teams list
+      setExistingTeams(prev => [...prev, team]);
       setTeamName("");
       setTeamMembers([]);
-      setError(null);
-      alert('Team created successfully!');
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to create team');
+    } catch (error: any) {
+      console.error('Error creating team:', error);
+      toast({
+        title: "Error",
+        description: error.response?.data?.error || "Failed to create team",
+        variant: "destructive",
+      });
     }
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-50 to-purple-100 p-6">
+      <Toaster />
       <div className="max-w-2xl mx-auto">
-        <div className="flex justify-between items-center mb-6">
+        <div className="mb-6">
           <h1 className="text-2xl font-bold">Team Formation</h1>
-          <Button variant="destructive" onClick={logout}>Logout</Button>
         </div>
 
         {loading ? (
           <div className="text-center py-8">
             <p>Loading project details...</p>
-          </div>
-        ) : error ? (
-          <div className="text-center py-8 text-red-500">
-            {error}
           </div>
         ) : (
           <Card>
@@ -147,7 +201,7 @@ const TeamFormation = () => {
                 Team Formation
               </CardTitle>
               <CardDescription>
-                Create your team for: <strong>{projectName}</strong>
+                Create your team for: <strong>{selectedProject?.title}</strong>
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
@@ -203,11 +257,13 @@ const TeamFormation = () => {
               <ul>
                 <li>• All members must be from the same class</li>
                 <li>• Team name must be unique</li>
+                <li>• USN must be in the format: 1MS22CS001</li>
+                <li>• Maximum team size: {selectedProject?.teamSize || 2} members</li>
               </ul>
 
               <Button
                 onClick={createTeam}
-                disabled={!teamName || teamMembers.length < 2}
+                disabled={!teamName || teamMembers.length === 0 || teamMembers.length > (selectedProject?.teamSize || 2)}
                 className="w-full"
               >
                 Create Team

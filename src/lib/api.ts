@@ -1,16 +1,28 @@
 import axios from 'axios';
 
-// API Configuration
-const API_BASE_URL = 'http://localhost:3001/api';
+const BASE_URL = 'http://localhost:3001/api';
+
 const api = axios.create({
-  baseURL: API_BASE_URL,
+  baseURL: BASE_URL,
   headers: {
     'Content-Type': 'application/json',
-  },
+  }
+});
+
+// Add auth interceptor conditionally for protected routes only
+api.interceptors.request.use((config) => {
+  // Only add auth header for protected routes
+  if (!config.url?.includes('/public/')) {
+    const token = localStorage.getItem('token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+  }
+  return config;
 });
 
 // Types
-interface LoginResponse {
+export interface LoginResponse {
   token: string;
   user: {
     _id: string;
@@ -20,22 +32,30 @@ interface LoginResponse {
   };
 }
 
-interface Teacher {
+export interface Teacher {
   _id: string;
   email: string;
   name: string;
   department?: string;
 }
 
-interface Project {
+export interface Project {
   _id: string;
-  name: string;
+  title: string;
+  description: string;
+  teamSize: number;
   class: string;
-  status: 'active' | 'completed';
+  status: 'active' | 'completed' | 'archived';
   createdAt: Date;
+  createdBy?: {
+    _id: string;
+    name: string;
+    email: string;
+  };
+  teams?: string[];
 }
 
-interface Class {
+export interface Class {
   _id: string;
   name: string;
   semester: string;
@@ -104,8 +124,8 @@ export const classAPI = {
     const response = await api.get<Class[]>('/classes');
     return response.data;
   },
-  getClass: async (className: string) => {
-    const response = await api.get<Class>(`/classes/${className}`);
+  getClass: async (classId: string) => {
+    const response = await api.get<Class>(`/classes/${classId}`);
     return response.data;
   },
   createClass: async (data: Omit<Class, '_id'>) => {
@@ -114,6 +134,10 @@ export const classAPI = {
   },
   deleteClass: async (id: string) => {
     const response = await api.delete(`/classes/${id}`);
+    return response.data;
+  },
+  updateTeacher: async (classId: string, teacherId: string) => {
+    const response = await api.put<Class>(`/classes/${classId}/teacher`, { teacherId });
     return response.data;
   },
 };
@@ -128,17 +152,10 @@ export const teamAPI = {
     const response = await api.get(`/teams/class/${classId}`);
     return response.data;
   },
-
-  // ... other team methods
+  delete: async (teamId: string) => {
+    const response = await api.delete(`/teams/${teamId}`);
+    return response.data;
+  },
 };
-
-// Interceptor to add auth token
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token');
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
-});
 
 export default api;

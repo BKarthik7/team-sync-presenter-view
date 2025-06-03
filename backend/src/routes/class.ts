@@ -1,63 +1,67 @@
-import { Router, Request, Response } from 'express';
+import express, { Response, Request } from 'express';
 import { Types } from 'mongoose';
 import { AuthenticatedRequest } from '../types';
 import { Class } from '../models/Class';
 import { pusher } from '../index';
 import { isAuthenticated } from '../middleware/auth';
 
-const router = Router();
+const router = express.Router();
 
 // Create a new class
 router.post('/', isAuthenticated, async (req: Request, res: Response) => {
-  const authReq = req as AuthenticatedRequest;
   try {
-    const { name, semester, students } = authReq.body as { name: string; semester: string; students?: string[] };
+    const authReq = req as AuthenticatedRequest;
+    const { name, semester, students } = req.body;
+
     const class_ = new Class({
       name,
       semester,
-      students: students || [],
-      createdBy: authReq.user._id
+      students,
+      teacher: authReq.user._id
     });
 
     await class_.save();
+    await class_.populate('teacher', 'name email');
+    
     res.status(201).json(class_);
-  } catch (error: any) {
-    res.status(400).json({ message: error.message });
+  } catch (error) {
+    console.error('Error creating class:', error);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
-// Get all classes for a user
+// Get all classes
 router.get('/', isAuthenticated, async (req: Request, res: Response) => {
-  const authReq = req as AuthenticatedRequest;
   try {
-    const classes = await Class.find({ createdBy: authReq.user._id });
+    const authReq = req as AuthenticatedRequest;
+    console.log('Fetching classes for user:', authReq.user._id);
+    
+    const classes = await Class.find()
+      .populate('teacher', 'name email')
+      .sort({ createdAt: -1 });
+    
+    console.log('Found classes:', classes.length);
     res.json(classes);
-  } catch (error: any) {
-    res.status(500).json({ message: error.message });
+  } catch (error) {
+    console.error('Error fetching classes:', error);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
 // Get a specific class
-router.get('/:id', isAuthenticated, async (req: Request, res: Response) => {
-  const authReq = req as AuthenticatedRequest;
+router.get('/:id', async (req: Request, res: Response) => {
   try {
-    const { id } = authReq.params as { id: string };
-    const class_ = await Class.findById(id);
-    if (!class_) {
-      return res.status(404).json({ message: 'Class not found' });
+    const classData = await Class.findById(req.params.id)
+      .populate('teacher', 'name email');
+    
+    if (!classData) {
+      return res.status(404).json({ error: 'Class not found' });
     }
-
-    if (!Types.ObjectId.isValid(class_.createdBy) || !Types.ObjectId.isValid(authReq.user._id)) {
-      return res.status(400).json({ message: 'Invalid ObjectId' });
-    }
-
-    if (class_.createdBy.toString() !== authReq.user._id.toString()) {
-      return res.status(403).json({ message: 'Not authorized to access this class' });
-    }
-
-    res.json(class_);
-  } catch (error: any) {
-    res.status(500).json({ message: error.message });
+    
+    res.json(classData);
+  } catch (error) {
+    console.error('Error fetching class:', error);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
@@ -71,11 +75,8 @@ router.put('/:id', isAuthenticated, async (req: Request, res: Response) => {
       return res.status(404).json({ message: 'Class not found' });
     }
 
-    if (!Types.ObjectId.isValid(class_.createdBy) || !Types.ObjectId.isValid(authReq.user._id)) {
-      return res.status(400).json({ message: 'Invalid ObjectId' });
-    }
-
-    if (class_.createdBy.toString() !== authReq.user._id.toString()) {
+    // Check if user is the teacher
+    if (class_.teacher.toString() !== authReq.user._id.toString()) {
       return res.status(403).json({ message: 'Not authorized to update this class' });
     }
 
@@ -84,9 +85,16 @@ router.put('/:id', isAuthenticated, async (req: Request, res: Response) => {
       { $set: authReq.body },
       { new: true }
     );
+
+    if (!updatedClass) {
+      return res.status(404).json({ message: 'Class not found after update' });
+    }
+
+    await updatedClass.populate('teacher', 'name email');
     res.json(updatedClass);
-  } catch (error: any) {
-    res.status(400).json({ message: error.message });
+  } catch (error) {
+    console.error('Error updating class:', error);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
@@ -100,18 +108,16 @@ router.delete('/:id', isAuthenticated, async (req: Request, res: Response) => {
       return res.status(404).json({ message: 'Class not found' });
     }
 
-    if (!Types.ObjectId.isValid(class_.createdBy) || !Types.ObjectId.isValid(authReq.user._id)) {
-      return res.status(400).json({ message: 'Invalid ObjectId' });
-    }
-
-    if (class_.createdBy.toString() !== authReq.user._id.toString()) {
+    // Check if user is the teacher
+    if (class_.teacher.toString() !== authReq.user._id.toString()) {
       return res.status(403).json({ message: 'Not authorized to delete this class' });
     }
 
-    await Class.findByIdAndDelete(id);
+    await class_.deleteOne();
     res.json({ message: 'Class deleted successfully' });
-  } catch (error: any) {
-    res.status(500).json({ message: error.message });
+  } catch (error) {
+    console.error('Error deleting class:', error);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
@@ -126,11 +132,8 @@ router.post('/:id/students', isAuthenticated, async (req: Request, res: Response
       return res.status(404).json({ message: 'Class not found' });
     }
 
-    if (!Types.ObjectId.isValid(class_.createdBy) || !Types.ObjectId.isValid(authReq.user._id)) {
-      return res.status(400).json({ message: 'Invalid ObjectId' });
-    }
-
-    if (class_.createdBy.toString() !== authReq.user._id.toString()) {
+    // Check if user is the teacher
+    if (class_.teacher.toString() !== authReq.user._id.toString()) {
       return res.status(403).json({ message: 'Not authorized to modify this class' });
     }
 
@@ -146,7 +149,7 @@ router.post('/:id/students', isAuthenticated, async (req: Request, res: Response
     await class_.save();
     res.json(class_);
   } catch (error: any) {
-    res.status(400).json({ message: error.message });
+    res.status(400).json({ message: error?.message || 'An error occurred' });
   }
 });
 
@@ -160,11 +163,8 @@ router.delete('/:id/students/:studentId', isAuthenticated, async (req: Request, 
       return res.status(404).json({ message: 'Class not found' });
     }
 
-    if (!Types.ObjectId.isValid(class_.createdBy) || !Types.ObjectId.isValid(authReq.user._id)) {
-      return res.status(400).json({ message: 'Invalid ObjectId' });
-    }
-
-    if (class_.createdBy.toString() !== authReq.user._id.toString()) {
+    // Check if user is the teacher
+    if (class_.teacher.toString() !== authReq.user._id.toString()) {
       return res.status(403).json({ message: 'Not authorized to modify this class' });
     }
 
@@ -177,7 +177,52 @@ router.delete('/:id/students/:studentId', isAuthenticated, async (req: Request, 
     await class_.save();
     res.json(class_);
   } catch (error: any) {
-    res.status(400).json({ message: error.message });
+    res.status(400).json({ message: error?.message || 'An error occurred' });
+  }
+});
+
+// Update class teacher
+router.put('/:id/teacher', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const { teacherId } = req.body;
+
+    console.log('Updating class teacher:', {
+      classId: req.params.id,
+      teacherId,
+      userId: authReq.user._id
+    });
+
+    if (!teacherId) {
+      return res.status(400).json({ error: 'Teacher ID is required' });
+    }
+
+    const class_ = await Class.findById(req.params.id);
+    if (!class_) {
+      console.log('Class not found:', req.params.id);
+      return res.status(404).json({ error: 'Class not found' });
+    }
+
+    console.log('Found class:', {
+      id: class_._id,
+      currentTeacher: class_.teacher,
+      name: class_.name
+    });
+
+    // Update the teacher
+    class_.teacher = teacherId;
+    await class_.save();
+    await class_.populate('teacher', 'name email');
+
+    console.log('Class teacher updated successfully:', {
+      classId: class_._id,
+      newTeacher: class_.teacher
+    });
+
+    res.json(class_);
+  } catch (error) {
+    console.error('Error updating class teacher:', error);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 

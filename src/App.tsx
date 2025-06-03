@@ -50,11 +50,7 @@ function App() {
         />
         <Route
           path="/team-formation"
-          element={
-            <ProtectedRoute allowedRoles={['lab_instructor']}>
-              <TeamFormation />
-            </ProtectedRoute>
-          }
+          element={<TeamFormation />}
         />
         
         <Route

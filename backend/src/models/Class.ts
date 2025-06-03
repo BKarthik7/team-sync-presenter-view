@@ -15,8 +15,8 @@ const classSchema = new Schema<IClass>({
     type: String,
     required: true
   }],
-  createdBy: {
-    type: Schema.Types.ObjectId,
+  teacher: {
+    type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     required: true
   }

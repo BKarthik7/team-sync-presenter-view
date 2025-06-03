@@ -7,6 +7,7 @@ export interface IClass {
   semester: string;
   students: string[];
   createdBy: Types.ObjectId;
+  teacher: Types.ObjectId;
 }
 
 export type AuthenticatedRequest = Request & {

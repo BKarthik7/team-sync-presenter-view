@@ -7,6 +7,7 @@ import authRoutes from './routes/auth';
 import classRoutes from './routes/class';
 import teamRoutes from './routes/team';
 import evaluationRoutes from './routes/evaluation';
+import projectRoutes from './routes/projects';
 
 dotenv.config();
 
@@ -37,6 +38,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/classes', classRoutes);
 app.use('/api/teams', teamRoutes);
 app.use('/api/evaluations', evaluationRoutes);
+app.use('/api/projects', projectRoutes);
 
 // MongoDB connection
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/team-sync';
