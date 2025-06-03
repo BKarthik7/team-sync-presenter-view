@@ -1,11 +1,13 @@
 
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Users, Presentation, UserCheck } from "lucide-react";
 
 const Index = () => {
   const [selectedRole, setSelectedRole] = useState<string | null>(null);
+  const navigate = useNavigate();
 
   const roles = [
     {
@@ -34,6 +36,24 @@ const Index = () => {
   const handleRoleSelect = (roleId: string) => {
     setSelectedRole(roleId);
     console.log(`Selected role: ${roleId}`);
+  };
+
+  const handleContinueToDashboard = () => {
+    if (selectedRole) {
+      switch (selectedRole) {
+        case "lab-assistant":
+          navigate("/lab-assistant");
+          break;
+        case "presenter-controller":
+          navigate("/presenter");
+          break;
+        case "peer":
+          navigate("/peer");
+          break;
+        default:
+          console.error("Unknown role selected");
+      }
+    }
   };
 
   return (
@@ -92,7 +112,10 @@ const Index = () => {
                   <p className="text-gray-600 mb-4">
                     You've selected: <strong className="text-gray-800 capitalize">{selectedRole.replace('-', ' ')}</strong>
                   </p>
-                  <Button className="w-full bg-blue-600 hover:bg-blue-700">
+                  <Button 
+                    className="w-full bg-blue-600 hover:bg-blue-700"
+                    onClick={handleContinueToDashboard}
+                  >
                     Continue to Dashboard
                   </Button>
                 </CardContent>
