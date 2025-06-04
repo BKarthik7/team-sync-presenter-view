@@ -19,9 +19,9 @@ const userSchema = new mongoose.Schema({
     required: function(this: { role: string }): boolean {
       return this.role !== 'peer';
     },
-    unique: true,
     trim: true,
-    lowercase: true
+    lowercase: true,
+    sparse: true
   },
   password: {
     type: String,
@@ -60,6 +60,12 @@ const userSchema = new mongoose.Schema({
       return ret;
     }
   }
+});
+
+// Add compound index for email uniqueness only for non-peer users
+userSchema.index({ email: 1, role: 1 }, { 
+  unique: true,
+  partialFilterExpression: { role: { $ne: 'peer' } }
 });
 
 // Hash password before saving

@@ -1,54 +1,39 @@
-import mongoose from 'mongoose';
+import mongoose, { Schema, Document } from 'mongoose';
 
-export interface IEvaluation extends mongoose.Document {
+export interface IEvaluation extends Document {
+  form: mongoose.Types.ObjectId;
+  project: mongoose.Types.ObjectId;
   team: mongoose.Types.ObjectId;
-  evaluator: mongoose.Types.ObjectId;
-  scores: {
-    criteria: string;
-    score: number;
-    comments: string;
-  }[];
-  overallScore: number;
-  feedback: string;
+  submittedBy: mongoose.Types.ObjectId;
+  responses: Record<string, string | number>;
   createdAt: Date;
   updatedAt: Date;
 }
 
-const evaluationSchema = new mongoose.Schema({
+const evaluationSchema = new Schema({
+  form: {
+    type: Schema.Types.ObjectId,
+    ref: 'EvaluationForm',
+    required: true
+  },
+  project: {
+    type: Schema.Types.ObjectId,
+    ref: 'Project',
+    required: true
+  },
   team: {
-    type: mongoose.Schema.Types.ObjectId,
+    type: Schema.Types.ObjectId,
     ref: 'Team',
     required: true
   },
-  evaluator: {
-    type: mongoose.Schema.Types.ObjectId,
+  submittedBy: {
+    type: Schema.Types.ObjectId,
     ref: 'User',
     required: true
   },
-  scores: [{
-    criteria: {
-      type: String,
-      required: true
-    },
-    score: {
-      type: Number,
-      required: true,
-      min: 0,
-      max: 10
-    },
-    comments: {
-      type: String,
-      required: true
-    }
-  }],
-  overallScore: {
-    type: Number,
-    required: true,
-    min: 0,
-    max: 10
-  },
-  feedback: {
-    type: String,
+  responses: {
+    type: Map,
+    of: Schema.Types.Mixed,
     required: true
   }
 }, {

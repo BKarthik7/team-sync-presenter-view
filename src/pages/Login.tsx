@@ -78,7 +78,13 @@ export default function Login() {
   const handleLabInstructorLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await login('admin@admin.com', 'admin', 'lab_instructor');
+      // Validate credentials
+      if (email !== 'admin@admin.com' || password !== 'admin') {
+        setError('Invalid credentials. Please check your email and password.');
+        return;
+      }
+
+      await login(email, password, 'lab_instructor');
       navigate('/dashboard');
     } catch (error) {
       console.error('Login failed:', error);

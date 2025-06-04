@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Play, Pause, Square, Clock, Users, BarChart3, Copy, Check, Trash2, LogOut } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { projectAPI, classAPI, teamAPI } from '@/lib/api';
+import { projectAPI, classAPI, teamAPI, evaluationFormAPI } from '@/lib/api';
 import type { Project } from '@/lib/api';
 import {
   Dialog,
@@ -28,6 +28,16 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Switch } from "@/components/ui/switch";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
+import { useAuth } from '../hooks/useAuth';
+import { pusher, CHANNELS, EVENTS } from '../lib/pusher';
+import { TeamStatus } from '@/lib/api';
+import axios from 'axios';
 
 interface Class {
   _id: string;
@@ -44,6 +54,50 @@ interface Team {
   class: string;
 }
 
+interface EvaluationForm {
+  _id: string;
+  title: string;
+  description: string;
+  fields: {
+    type: 'rating' | 'text';
+    label: string;
+    required: boolean;
+  }[];
+  evaluationTime: number; // Time in seconds
+}
+
+interface FieldAverage {
+  average: number;
+  count: number;
+}
+
+interface TeamEvaluationResult {
+  teamId: string;
+  teamName: string;
+  averageRatings: Record<string, FieldAverage>; // Keyed by field label
+  overallTeamAverage?: number;
+}
+
+type AggregatedResults = TeamEvaluationResult[];
+
+// Add interface for evaluation response
+interface EvaluationResponse {
+  _id: string;
+  form: string;
+  project: string;
+  team: {
+    _id: string;
+    name: string;
+  };
+  submittedBy: {
+    _id: string;
+    name: string;
+  };
+  responses: Record<string, any>;
+  createdAt: string;
+  updatedAt: string;
+}
+
 const PresenterDashboard = () => {
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
@@ -56,6 +110,7 @@ const PresenterDashboard = () => {
   const [selectedClass, setSelectedClass] = useState("");
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { user } = useAuth();
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [classes, setClasses] = useState<Class[]>([]);
@@ -69,6 +124,37 @@ const PresenterDashboard = () => {
   const [activeProjects, setActiveProjects] = useState<Project[]>([]);
   const [projectTeams, setProjectTeams] = useState<Team[]>([]);
   const [isLoadingTeams, setIsLoadingTeams] = useState(false);
+
+  const [teams, setTeams] = useState<Team[]>([]);
+  const [finishedTeams, setFinishedTeams] = useState<Team[]>([]);
+  const [currentTeam, setCurrentTeam] = useState<Team | null>(null);
+  const [timer, setTimer] = useState(0);
+  const [isEvaluationEnabled, setIsEvaluationEnabled] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  const [evaluationForm, setEvaluationForm] = useState<EvaluationForm | null>(null);
+  const [evaluationTime, setEvaluationTime] = useState(60); // Default 60 seconds
+  const [isCreatingForm, setIsCreatingForm] = useState(false);
+  const [formTitle, setFormTitle] = useState('');
+  const [formDescription, setFormDescription] = useState('');
+  const [formFields, setFormFields] = useState<{
+    type: 'rating' | 'text';
+    label: string;
+    required: boolean;
+  }[]>([]);
+
+  // Evaluation Results State
+  const [aggregatedResults, setAggregatedResults] = useState<AggregatedResults | null>(null);
+  const [isLoadingResults, setIsLoadingResults] = useState(false);
+
+  // Add new state for evaluation timer
+  const [evaluationTimer, setEvaluationTimer] = useState(0);
+  const [isEvaluationTimerRunning, setIsEvaluationTimerRunning] = useState(false);
+
+  // Update state type
+  const [evaluationResponses, setEvaluationResponses] = useState<EvaluationResponse[]>([]);
+  const [isLoadingResponses, setIsLoadingResponses] = useState(false);
 
   useEffect(() => {
     const fetchProjects = async () => {
@@ -95,11 +181,115 @@ const PresenterDashboard = () => {
     fetchClasses();
   }, []);
 
-  const [teams] = useState([
-    { id: 1, name: "Team Alpha", members: ["1RV21CS001", "1RV21CS002"], project: "AI in Healthcare" },
-    { id: 2, name: "Team Beta", members: ["1RV21CS003", "1RV21CS004"], project: "AI in Healthcare" },
-    { id: 3, name: "Team Gamma", members: ["1RV21CS005", "1RV21CS006"], project: "AI in Healthcare" }
-  ]);
+  useEffect(() => {
+    const fetchTeams = async () => {
+      try {
+        const projectId = localStorage.getItem('selectedProjectId');
+        if (!projectId) {
+          setError('No project selected');
+          return;
+        }
+
+        const response = await teamAPI.getByProject(projectId);
+        setTeams(response);
+      } catch (err) {
+        setError('Failed to fetch teams');
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchTeams();
+  }, []);
+
+  useEffect(() => {
+    const projectId = localStorage.getItem('selectedProjectId');
+    if (!projectId) return;
+
+    // Subscribe to presentation channel
+    const presentationChannel = pusher.subscribe(CHANNELS.PRESENTATION(projectId));
+    const queueChannel = pusher.subscribe(CHANNELS.QUEUE(projectId));
+
+    // Handle timer updates
+    presentationChannel.bind(EVENTS.TIMER_UPDATE, (data: { timer: number }) => {
+      setTimer(data.timer);
+    });
+
+    // Handle evaluation toggle
+    presentationChannel.bind(EVENTS.EVALUATION_TOGGLE, (data: { enabled: boolean }) => {
+      setIsEvaluationEnabled(data.enabled);
+    });
+
+    return () => {
+      presentationChannel.unbind_all();
+      queueChannel.unbind_all();
+      pusher.unsubscribe(CHANNELS.PRESENTATION(projectId));
+      pusher.unsubscribe(CHANNELS.QUEUE(projectId));
+    };
+  }, []);
+
+  // Add new useEffect for evaluation timer
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+
+    if (isEvaluationTimerRunning && evaluationTimer > 0) {
+      interval = setInterval(() => {
+        setEvaluationTimer(prev => {
+          if (prev <= 1) {
+            setIsEvaluationTimerRunning(false);
+            setIsEvaluationEnabled(false);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+
+    return () => {
+      if (interval) {
+        clearInterval(interval);
+      }
+    };
+  }, [isEvaluationTimerRunning, evaluationTimer]);
+
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+
+    if (isTimerRunning && currentTeam) {  // Only run if we have a current team
+      interval = setInterval(() => {
+        setTimer(prev => {
+          const newTimer = prev + 1;
+          
+          const projectId = localStorage.getItem('selectedProjectId');
+          if (projectId) {
+            // Send both timer and current team info in one request
+            fetch(`http://localhost:3001/api/presentations/${projectId}/timer`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+              },
+              body: JSON.stringify({ 
+                timer: newTimer,
+                team: currentTeam  // Send the complete team object
+              })
+            }).catch(error => {
+              console.error('Failed to update timer and team:', error);
+            });
+          }
+
+          return newTimer;
+        });
+      }, 1000);
+    }
+
+    return () => {
+      if (interval) {
+        clearInterval(interval);
+      }
+    };
+  }, [isTimerRunning, currentTeam]);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -154,20 +344,98 @@ const PresenterDashboard = () => {
     }
   };
 
-  const startPresentation = () => {
-    setIsTimerRunning(true);
-    console.log(`Starting presentation for ${selectedTeam}`);
-  };
+  const startPresentation = (team: Team) => {
+    console.log('Starting presentation for team:', team);
+    
+    // Find the complete team data
+    const selectedTeamData = projectTeams.find(t => t._id === team._id);
+    if (!selectedTeamData) {
+      console.error('Selected team data not found');
+      return;
+    }
 
-  const pausePresentation = () => {
-    setIsTimerRunning(false);
-    console.log("Presentation paused");
+    // Set the current team first
+    setCurrentTeam(selectedTeamData);
+    
+    // Then start the timer and other states
+    setIsTimerRunning(true);
+    setIsEvaluationEnabled(false);
+    setTimer(0);
+
+    const projectId = localStorage.getItem('selectedProjectId');
+    if (!projectId) {
+      console.error('No project ID found');
+      return;
+    }
+
+    // Notify peers about presentation start using the API
+    fetch(`http://localhost:3001/api/presentations/${projectId}/start`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('token')}`
+      },
+      body: JSON.stringify({ 
+        team: selectedTeamData,
+        timer: 0
+      })
+    }).catch(error => {
+      console.error('Failed to start presentation:', error);
+    });
+
+    // Update queue
+    const updatedTeams = teams.filter(t => t._id !== team._id);
+    setTeams(updatedTeams);
+    fetch(`http://localhost:3001/api/presentations/${projectId}/queue`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('token')}`
+      },
+      body: JSON.stringify({ teams: updatedTeams })
+    }).catch(error => {
+      console.error('Failed to update queue:', error);
+    });
   };
 
   const endPresentation = () => {
     setIsTimerRunning(false);
-    setPresentationTimer(0);
-    console.log("Presentation ended, sending evaluation forms");
+    setIsEvaluationEnabled(false);
+    setCurrentTeam(null);
+
+    const projectId = localStorage.getItem('selectedProjectId');
+    if (!projectId) return;
+
+    // Notify peers about presentation end using the API
+    fetch(`http://localhost:3001/api/presentations/${projectId}/end`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('token')}`
+      }
+    }).catch(error => {
+      console.error('Failed to end presentation:', error);
+    });
+  };
+
+  const toggleEvaluation = () => {
+    const newState = !isEvaluationEnabled;
+    setIsEvaluationEnabled(newState);
+
+    const projectId = localStorage.getItem('selectedProjectId');
+    if (!projectId) return;
+
+    // Notify peers about evaluation toggle using the API
+    fetch(`http://localhost:3001/api/presentations/${projectId}/evaluation`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('token')}`
+      },
+      body: JSON.stringify({ enabled: newState })
+    }).catch(error => {
+      console.error('Failed to toggle evaluation:', error);
+    });
   };
 
   const handleManageTeams = async (project: Project) => {
@@ -290,17 +558,17 @@ const PresenterDashboard = () => {
     try {
       setIsUpdatingStatus(true);
       const newStatus = currentStatus === 'active' ? 'archived' : 'active';
-      await projectAPI.updateStatus(projectId, newStatus);
+      await projectAPI.updateStatus(projectId, newStatus as 'active' | 'completed' | 'archived');
       
       // Update local state
       setProjects(prevProjects => 
         prevProjects.map(p => 
-          p._id === projectId ? { ...p, status: newStatus } : p
+          p._id === projectId ? { ...p, status: newStatus as 'active' | 'completed' | 'archived' } : p
         )
       );
       
       if (selectedProject?._id === projectId) {
-        setSelectedProject(prev => prev ? { ...prev, status: newStatus } : null);
+        setSelectedProject(prev => prev ? { ...prev, status: newStatus as 'active' | 'completed' | 'archived' } : null);
       }
 
       toast({
@@ -354,15 +622,368 @@ const PresenterDashboard = () => {
   };
 
   // Update project selection to fetch teams
+  const fetchEvaluationResponses = async (projectId: string) => {
+    try {
+      setIsLoadingResponses(true);
+      const response = await axios.get<EvaluationResponse[]>(
+        `http://localhost:3001/api/evaluations/project/${projectId}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          }
+        }
+      );
+      setEvaluationResponses(response.data);
+    } catch (error) {
+      console.error('Error fetching evaluation responses:', error);
+      // Don't show error toast for 404 as it's expected when no responses exist
+      if (axios.isAxiosError(error) && error.response?.status !== 404) {
+        toast({
+          title: 'Error',
+          description: 'Failed to fetch evaluation responses',
+          variant: 'destructive',
+        });
+      }
+      setEvaluationResponses([]);
+    } finally {
+      setIsLoadingResponses(false);
+    }
+  };
+
   const handleProjectSelect = async (value: string) => {
     const project = activeProjects.find(p => p.title === value);
     setSelectedProject(project || null);
     if (project) {
       await fetchProjectTeams(project._id);
+      await fetchEvaluationResponses(project._id);
+      
+      // Reset form state first
+      setEvaluationForm(null);
+      setFormTitle('');
+      setFormDescription('');
+      setFormFields([]);
+      setEvaluationTime(60);
+
+      try {
+        const response = await evaluationFormAPI.getByProject(project._id);
+        const form = response.data;
+        if (form) {
+          setEvaluationForm(form);
+          setFormTitle(form.title);
+          setFormDescription(form.description);
+          setFormFields(form.fields);
+          setEvaluationTime(form.evaluationTime);
+        }
+      } catch (error) {
+        // Only handle unexpected errors
+        console.error('Error fetching evaluation form:', error);
+        toast({
+          title: 'Error',
+          description: 'Failed to fetch evaluation form',
+          variant: 'destructive',
+        });
+      }
     } else {
       setProjectTeams([]);
+      setEvaluationForm(null);
+      setEvaluationResponses([]);
     }
   };
+
+  const addFormField = (type: 'rating' | 'text') => {
+    const newField: {
+      type: 'rating' | 'text';
+      label: string;
+      required: boolean;
+    } = {
+      type,
+      label: '',
+      required: true
+    };
+    setFormFields([...formFields, newField]);
+  };
+
+  const removeFormField = (index: number) => {
+    setFormFields(formFields.filter((_, i) => i !== index));
+  };
+
+  const updateFormField = (index: number, updates: Partial<{
+    type: 'rating' | 'text';
+    label: string;
+    required: boolean;
+  }>) => {
+    setFormFields(formFields.map((field, i) => 
+      i === index ? { ...field, ...updates } : field
+    ));
+  };
+
+  const saveEvaluationForm = async () => {
+    console.log('Saving evaluation form');
+    if (!formTitle || formFields.length === 0) {
+      toast({
+        title: 'Error',
+        description: 'Please provide a title and at least one field for the evaluation form',
+        variant: 'destructive',
+      });
+      return;
+    }
+    if (!selectedProject?._id) {
+      toast({
+        title: 'Error',
+        description: 'Please select a project from the Presentation tab before creating an evaluation form',
+        variant: 'destructive',
+      });
+      return;
+    }
+    try {
+      const formData = {
+        title: formTitle,
+        description: formDescription || 'No description provided',
+        fields: formFields,
+        evaluationTime,
+        project: selectedProject._id,
+      };
+      console.log('Form data for save:', formData);
+      
+      let response;
+      if (evaluationForm?._id) {
+        // Update existing form
+        response = await evaluationFormAPI.update(evaluationForm._id, formData);
+      } else {
+        // Create new form
+        response = await evaluationFormAPI.create(formData);
+      }
+      
+      const savedForm = response.data;
+      setEvaluationForm(savedForm);
+      setIsCreatingForm(false);
+      toast({
+        title: 'Success',
+        description: `Evaluation form ${evaluationForm?._id ? 'updated' : 'created'} successfully`,
+      });
+    } catch (error) {
+      console.error('Error saving evaluation form:', error);
+      toast({
+        title: 'Error',
+        description: `Failed to ${evaluationForm?._id ? 'update' : 'create'} evaluation form`,
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const startEvaluation = async () => {
+    if (!currentTeam) {
+      toast({
+        title: 'Error',
+        description: 'Please select a team to present first',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (!isTimerRunning) {
+      toast({
+        title: 'Error',
+        description: 'Presentation must be running to start evaluation',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (!evaluationForm || !evaluationForm._id) { // Ensure form is saved and has an ID
+      console.error('No evaluation form available or form not saved yet.');
+      toast({
+        title: 'Error',
+        description: 'Evaluation form is not configured or not saved. Please save the form first.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    
+    console.log('Starting evaluation with form:', evaluationForm);
+
+    const projectId = localStorage.getItem('selectedProjectId');
+    if (!projectId) {
+      console.error('No project ID found');
+      toast({
+        title: 'Error',
+        description: 'Project context not found. Please select a project.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    try {
+      // 1. Ensure the form is pushed/updated on the backend.
+      console.log('Pushing/activating evaluation form on backend:', evaluationForm);
+      const pushResponse = await fetch(`http://localhost:3001/api/presentations/${projectId}/evaluation-form`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ 
+          form: { 
+            _id: evaluationForm._id,
+            title: evaluationForm.title,
+            description: evaluationForm.description,
+            fields: evaluationForm.fields,
+            evaluationTime: evaluationForm.evaluationTime
+          }
+        })
+      });
+
+      if (!pushResponse.ok) {
+        const errorData = await pushResponse.json().catch(() => ({ message: 'Failed to push/activate evaluation form on backend' }));
+        throw new Error(errorData.message || 'Failed to push/activate evaluation form on backend');
+      }
+      console.log('Evaluation form pushed/activated on backend successfully.');
+
+      // 2. Client-side Pusher trigger to send the form to peers
+      const channelName = CHANNELS.PRESENTATION(projectId);
+      const presentationChannel = pusher.channel(channelName);
+
+      if (presentationChannel && presentationChannel.subscribed) {
+        console.log(`Triggering client event client-${EVENTS.EVALUATION_FORM_UPDATE} on channel ${channelName} with form:`, evaluationForm);
+        presentationChannel.trigger(
+          `client-${EVENTS.EVALUATION_FORM_UPDATE}`,
+          evaluationForm
+        );
+        console.log(`client-${EVENTS.EVALUATION_FORM_UPDATE} triggered successfully via Pusher channel.`);
+      } else {
+        console.error(`Pusher channel ${channelName} not subscribed or not found. Cannot trigger client event.`);
+        toast({
+          title: 'Pusher Error',
+          description: 'Cannot send form to peers. Communication channel is not active.',
+          variant: 'destructive',
+        });
+        return;
+      }
+      
+      // 3. Signal the backend to start the evaluation period
+      console.log('Triggering backend to start evaluation period...');
+      const toggleResponse = await fetch(`http://localhost:3001/api/presentations/${projectId}/evaluation`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({
+          enabled: true,
+          timeLimit: evaluationForm.evaluationTime 
+        }),
+      });
+
+      if (!toggleResponse.ok) {
+        const errorData = await toggleResponse.json().catch(() => ({ message: 'Failed to start evaluation period' }));
+        throw new Error(errorData.message || 'Failed to start evaluation period via backend');
+      }
+      console.log('Backend signaled to start evaluation period successfully.');
+      
+      // Update local state after successful backend calls
+      setIsEvaluationEnabled(true);
+      setEvaluationTimer(evaluationForm.evaluationTime);
+      setIsEvaluationTimerRunning(true); 
+
+      toast({
+        title: 'Success',
+        description: 'Evaluation started and form pushed to peers.',
+      });
+
+    } catch (error: any) {
+      console.error('Error starting evaluation:', error);
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to start evaluation. Check console for details.',
+        variant: 'destructive',
+      });
+      setIsEvaluationEnabled(false);
+      setIsEvaluationTimerRunning(false);
+    }
+  };
+
+  const endEvaluation = async () => {
+    setIsEvaluationEnabled(false);
+    setIsEvaluationTimerRunning(false);
+    setEvaluationTimer(0);
+
+    const projectId = localStorage.getItem('selectedProjectId');
+    if (!projectId) {
+      console.error('No project ID found for ending evaluation');
+      toast({
+        title: 'Error',
+        description: 'Project context not found.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    try {
+      console.log('Ending evaluation via backend...');
+      const response = await fetch(`http://localhost:3001/api/presentations/${projectId}/evaluation`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({
+          enabled: false
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'Failed to end evaluation' }));
+        throw new Error(errorData.message || 'Failed to end evaluation via backend');
+      }
+      console.log('Evaluation ended successfully via backend.');
+      if (projectId) {
+        fetchEvaluationResults(projectId);
+      }
+      toast({
+        title: 'Evaluation Ended',
+        description: 'The evaluation period has been closed.',
+      });
+    } catch (error: any) {
+      console.error('Error ending evaluation:', error);
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to end evaluation. Check console for details.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const fetchEvaluationResults = async (projectId: string) => {
+    setIsLoadingResults(true);
+    setAggregatedResults(null); // Clear previous results
+    try {
+      const response = await fetch(`http://localhost:3001/api/presentations/${projectId}/evaluation-results`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        },
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'Failed to fetch evaluation results' }));
+        throw new Error(errorData.message || 'Failed to fetch evaluation results');
+      }
+      const results: AggregatedResults = await response.json();
+      setAggregatedResults(results);
+    } catch (error: any) {
+      console.error("Error fetching evaluation results:", error);
+      toast({ title: 'Error', description: error.message || 'Could not load evaluation results.', variant: 'destructive' });
+      setAggregatedResults(null);
+    } finally {
+      setIsLoadingResults(false);
+    }
+  };
+
+  if (loading) {
+    return <div>Loading...</div>;
+  }
+
+  if (error) {
+    return <div className="text-red-500">{error}</div>;
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-50 to-teal-100 p-6">
@@ -383,10 +1004,11 @@ const PresenterDashboard = () => {
         </div>
 
         <Tabs defaultValue="projects" className="space-y-6" onValueChange={handleTabChange}>
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="projects">Projects</TabsTrigger>
             <TabsTrigger value="presentation">Live Presentation</TabsTrigger>
             <TabsTrigger value="evaluations">Evaluations</TabsTrigger>
+            <TabsTrigger value="responses">Responses</TabsTrigger>
           </TabsList>
 
           <TabsContent value="projects" className="space-y-6">
@@ -495,6 +1117,7 @@ const PresenterDashboard = () => {
               <Select 
                 value={selectedProject?.title} 
                 onValueChange={handleProjectSelect}
+                disabled={isTimerRunning}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select Project" />
@@ -518,33 +1141,29 @@ const PresenterDashboard = () => {
                 </CardHeader>
                 <CardContent className="text-center space-y-4">
                   <div className="text-6xl font-mono font-bold text-gray-800">
-                    {formatTime(presentationTimer)}
+                    {formatTime(timer)}
                   </div>
                   <div className="flex gap-2 justify-center">
                     <Button 
-                      onClick={startPresentation} 
-                      disabled={isTimerRunning}
-                      className="flex items-center gap-2"
+                      onClick={() => setIsTimerRunning(!isTimerRunning)}
+                      variant={isTimerRunning ? "destructive" : "default"}
+                      disabled={!selectedProject || !selectedTeam}
                     >
-                      <Play className="h-4 w-4" />
-                      Start
+                      {isTimerRunning ? "Pause Timer" : "Start Presentation"}
                     </Button>
                     <Button 
-                      onClick={pausePresentation} 
+                      onClick={toggleEvaluation}
+                      variant={isEvaluationEnabled ? "default" : "outline"}
                       disabled={!isTimerRunning}
-                      variant="outline"
-                      className="flex items-center gap-2"
                     >
-                      <Pause className="h-4 w-4" />
-                      Pause
+                      {isEvaluationEnabled ? "Disable Evaluation" : "Enable Evaluation"}
                     </Button>
                     <Button 
                       onClick={endPresentation}
                       variant="destructive"
-                      className="flex items-center gap-2"
+                      disabled={!isTimerRunning}
                     >
-                      <Square className="h-4 w-4" />
-                      End & Evaluate
+                      End Presentation
                     </Button>
                   </div>
                 </CardContent>
@@ -562,8 +1181,15 @@ const PresenterDashboard = () => {
                     <Label htmlFor="team-select">Select Presenting Team</Label>
                     <Select 
                       value={selectedTeam} 
-                      onValueChange={setSelectedTeam}
-                      disabled={isLoadingTeams || projectTeams.length === 0}
+                      onValueChange={(teamId) => {
+                        setSelectedTeam(teamId);
+                        // Find and set the current team when a team is selected
+                        const selectedTeamData = projectTeams.find(t => t._id === teamId);
+                        if (selectedTeamData) {
+                          setCurrentTeam(selectedTeamData);
+                        }
+                      }}
+                      disabled={isLoadingTeams || projectTeams.length === 0 || isTimerRunning}
                     >
                       <SelectTrigger>
                         <SelectValue placeholder={projectTeams.length === 0 ? "No teams available" : "Choose a team"} />
@@ -591,7 +1217,11 @@ const PresenterDashboard = () => {
 
                   <div className="p-3 bg-yellow-50 rounded-lg">
                     <p className="text-sm text-yellow-800">
-                      <strong>Status:</strong> {isTimerRunning ? "Presentation in progress" : "Ready to start"}
+                      <strong>Status:</strong> {
+                        !selectedProject ? "Please select a project" :
+                        !selectedTeam ? "Please select a team" :
+                        isTimerRunning ? "Presentation in progress" : "Ready to start"
+                      }
                     </p>
                   </div>
                 </CardContent>
@@ -615,7 +1245,7 @@ const PresenterDashboard = () => {
                   <div className="space-y-3">
                     {projectTeams.map((team, index) => (
                       <div 
-                        key={team._id} 
+                        key={`${team._id}-${index}`} 
                         className={`p-3 rounded-lg border ${
                           team._id === selectedTeam ? 'bg-blue-50 border-blue-200' : 'bg-white'
                         }`}
@@ -640,41 +1270,220 @@ const PresenterDashboard = () => {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <BarChart3 className="h-5 w-5" />
-                  Evaluation Results
+                  Evaluation Form
                 </CardTitle>
-                <CardDescription>View peer feedback and ratings for each team</CardDescription>
+                <CardDescription>Create and manage evaluation forms</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
-                  {teams.map((team) => (
-                    <div key={team.id} className="p-4 bg-white rounded-lg border">
-                      <h5 className="font-semibold mb-2">{team.name}</h5>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
-                        <div>
-                          <p className="text-2xl font-bold text-blue-600">4.2</p>
-                          <p className="text-sm text-gray-600">Content Quality</p>
+                {!isCreatingForm ? (
+                  <div className="space-y-4">
+                    {evaluationForm ? (
+                      <>
+                        <div className="p-4 bg-white rounded-lg border">
+                          <h4 className="font-semibold">{evaluationForm.title}</h4>
+                          <p className="text-sm text-gray-600">{evaluationForm.description}</p>
+                          <div className="mt-2">
+                            <p className="text-sm text-gray-600">
+                              Time Limit: {evaluationForm.evaluationTime} seconds
+                            </p>
+                            <p className="text-sm text-gray-600">
+                              Fields: {evaluationForm.fields.length}
+                            </p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="text-2xl font-bold text-green-600">4.5</p>
-                          <p className="text-sm text-gray-600">Presentation</p>
+                        <div className="flex gap-2">
+                          <Button onClick={() => setIsCreatingForm(true)}>
+                            Edit Form
+                          </Button>
+                          <Button 
+                            onClick={startEvaluation}
+                            disabled={isEvaluationEnabled}
+                          >
+                            Start Evaluation
+                          </Button>
+                          <Button 
+                            onClick={endEvaluation}
+                            variant="destructive"
+                            disabled={!isEvaluationEnabled}
+                          >
+                            End Evaluation
+                          </Button>
                         </div>
-                        <div>
-                          <p className="text-2xl font-bold text-purple-600">4.0</p>
-                          <p className="text-sm text-gray-600">Innovation</p>
-                        </div>
-                        <div>
-                          <p className="text-2xl font-bold text-orange-600">4.3</p>
-                          <p className="text-sm text-gray-600">Overall</p>
+                        {isEvaluationEnabled && (
+                          <div className="p-4 bg-yellow-50 rounded-lg">
+                            <p className="text-yellow-800">
+                              Time Remaining: {formatTime(evaluationTimer)}
+                            </p>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <Button onClick={() => setIsCreatingForm(true)}>
+                        Create Evaluation Form
+                      </Button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div>
+                      <Label>Form Title</Label>
+                      <Input
+                        value={formTitle}
+                        onChange={(e) => setFormTitle(e.target.value)}
+                        placeholder="Enter form title"
+                      />
+                    </div>
+                    <div>
+                      <Label>Form Description</Label>
+                      <Input
+                        value={formDescription}
+                        onChange={(e) => setFormDescription(e.target.value)}
+                        placeholder="Enter form description"
+                      />
+                    </div>
+                    <div>
+                      <Label>Evaluation Time (seconds)</Label>
+                      <Input
+                        type="number"
+                        min="1"
+                        value={evaluationTime || ''}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          if (value === '') {
+                            setEvaluationTime(60); // Default to 60 if empty
+                          } else {
+                            const numValue = parseInt(value);
+                            if (!isNaN(numValue) && numValue > 0) {
+                              setEvaluationTime(numValue);
+                            }
+                          }
+                        }}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center">
+                        <Label>Form Fields</Label>
+                        <div className="flex gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => addFormField('rating')}
+                          >
+                            Add Rating
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => addFormField('text')}
+                          >
+                            Add Text
+                          </Button>
                         </div>
                       </div>
-                      <Button variant="outline" className="w-full mt-3">
-                        View Detailed Feedback
+                      {formFields.map((field, index) => (
+                        <div key={index} className="p-4 bg-white rounded-lg border">
+                          <div className="flex justify-between items-start">
+                            <div className="flex-1 space-y-2">
+                              <Input
+                                value={field.label}
+                                onChange={(e) => updateFormField(index, { label: e.target.value })}
+                                placeholder={`Enter ${field.type} field label`}
+                              />
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  checked={field.required}
+                                  onChange={(e) => updateFormField(index, { required: e.target.checked })}
+                                  className="rounded border-gray-300"
+                                />
+                                <Label>Required</Label>
+                              </div>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => removeFormField(index)}
+                            >
+                              <Trash2 className="h-4 w-4 text-red-500" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex gap-2">
+                      <Button 
+                        onClick={() => {
+                          console.log('Save Form button clicked');
+                          saveEvaluationForm();
+                        }}
+                      >
+                        Save Form
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => setIsCreatingForm(false)}
+                      >
+                        Cancel
                       </Button>
                     </div>
-                  ))}
-                </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="responses" className="space-y-4">
+            {isLoadingResponses ? (
+              <div className="flex justify-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+              </div>
+            ) : evaluationResponses.length === 0 ? (
+              <div className="text-center text-muted-foreground">
+                No evaluation responses yet
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {Object.entries(
+                  evaluationResponses.reduce((acc, response) => {
+                    const teamId = response.team._id;
+                    if (!acc[teamId]) {
+                      acc[teamId] = {
+                        teamName: response.team.name,
+                        responses: []
+                      };
+                    }
+                    acc[teamId].responses.push(response);
+                    return acc;
+                  }, {} as Record<string, { teamName: string; responses: EvaluationResponse[] }>)
+                ).map(([teamId, { teamName, responses }]) => (
+                  <div key={teamId} className="space-y-4">
+                    <h3 className="text-lg font-semibold">{teamName}</h3>
+                    <div className="space-y-4">
+                      {responses.map((response) => (
+                        <Card key={response._id} className="p-4">
+                          <div className="flex justify-between items-start mb-4">
+                            <div>
+                              <p className="font-medium">Submitted by: {response.submittedBy.name}</p>
+                              <p className="text-sm text-muted-foreground">
+                                {new Date(response.createdAt).toLocaleString()}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            {Object.entries(response.responses).map(([field, value]) => (
+                              <div key={field} className="grid grid-cols-2 gap-2">
+                                <p className="font-medium">{field}:</p>
+                                <p>{value}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </Card>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </TabsContent>
         </Tabs>
       </div>

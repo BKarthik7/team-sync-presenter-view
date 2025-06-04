@@ -1,31 +1,49 @@
-import { Response, NextFunction, Request } from 'express';
+import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
-import { User } from '../models/User';
-import { AuthenticatedRequest } from '../types';
+import { Types } from 'mongoose';
+
+// Extend Express Request type to include user and headers
+export interface AuthenticatedRequest extends Request {
+  user: {
+    _id: Types.ObjectId;
+    role: string;
+  };
+  headers: {
+    authorization?: string;
+  };
+}
+
+// Type for the middleware function
+export type AuthMiddleware = (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => Promise<void | Response>;
 
 export const isAuthenticated = async (
   req: Request,
   res: Response,
   next: NextFunction
-) => {
+): Promise<void | Response> => {
   try {
-    const authHeader = (req as any).headers.authorization;
-    const token = authHeader?.replace('Bearer ', '');
-    
+    const token = (req as AuthenticatedRequest).headers.authorization?.replace('Bearer ', '');
+
     if (!token) {
-      throw new Error();
+      return res.status(401).json({ error: 'Authentication required' });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET!) as { _id: string };
-    const user = await User.findById(decoded._id);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key') as {
+      _id: string;
+      role: string;
+    };
 
-    if (!user) {
-      throw new Error();
-    }
+    (req as AuthenticatedRequest).user = {
+      _id: new Types.ObjectId(decoded._id),
+      role: decoded.role
+    };
 
-    (req as AuthenticatedRequest).user = user;
     next();
   } catch (error) {
-    res.status(401).json({ error: 'Please authenticate' });
+    return res.status(401).json({ error: 'Invalid token' });
   }
 };

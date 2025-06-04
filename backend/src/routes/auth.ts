@@ -3,10 +3,22 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { User } from '../models/User';
 import { Team } from '../models/Team';
-import { isAuthenticated } from '../middleware/auth';
-import { AuthenticatedRequest } from '../types';
+import { isAuthenticated, AuthenticatedRequest } from '../middleware/auth';
+import { Types } from 'mongoose';
 
 const router = express.Router();
+
+// Extend AuthenticatedRequest to include params and body
+interface AuthRequest extends AuthenticatedRequest {
+  params: {
+    id?: string;
+  };
+  body: {
+    name?: string;
+    email?: string;
+    password?: string;
+  };
+}
 
 // Register
 router.post('/register', async (req: Request, res: Response) => {
@@ -50,35 +62,22 @@ router.post('/login', async (req: Request, res: Response) => {
   try {
     const { email, password } = (req as any).body;
     
-    // Special case for admin/admin
+    // Special case for admin/admin - only allow lab_instructor role
     if (email === 'admin@admin.com' && password === 'admin') {
       try {
-        const adminUser = await User.findOne({ email: 'admin@admin.com', role: 'lab_instructor' });
-        
-        if (!adminUser) {
-          // Hash the password before saving
-          const salt = await bcrypt.genSalt(10);
-          const hashedPassword = await bcrypt.hash('admin', salt);
-          
-          const newUser = new User({
-            email: 'admin@admin.com',
-            password: hashedPassword,
-            name: 'Admin',
-            role: 'lab_instructor'
-          });
-          await newUser.save();
-          
-          const token = jwt.sign(
-            { _id: newUser._id, role: newUser.role },
-            process.env.JWT_SECRET || 'default-secret-key-for-development',
-            { expiresIn: '24h' }
-          );
-          
-          return res.json({ 
-            user: newUser, 
-            token: token 
-          });
-        }
+        // Create or get lab_instructor user
+        const adminUser = await User.findOneAndUpdate(
+          { email: 'admin@admin.com' },
+          { 
+            $setOnInsert: {
+              email: 'admin@admin.com',
+              password: await bcrypt.hash('admin', 10),
+              name: 'Admin',
+              role: 'lab_instructor'
+            }
+          },
+          { upsert: true, new: true }
+        );
 
         const token = jwt.sign(
           { _id: adminUser._id, role: adminUser.role },
@@ -217,12 +216,12 @@ router.post('/peer/login', async (req: Request, res: Response) => {
 // Create Teacher Account (Lab Instructor only)
 router.post('/create-teacher', isAuthenticated, async (req: Request, res: Response) => {
   try {
-    const authReq = req as AuthenticatedRequest;
-    if (authReq.user.role !== 'lab_instructor') {
-      return res.status(403).json({ error: 'Not authorized' });
-    }
+    const { name, email, password } = (req as AuthRequest).body;
 
-    const { email, password, name } = (req as any).body;
+    // Validate required fields
+    if (!name || !email || !password) {
+      return res.status(400).json({ error: 'Name, email, and password are required' });
+    }
 
     // Check if user already exists
     const existingUser = await User.findOne({ email });
@@ -234,63 +233,46 @@ router.post('/create-teacher', isAuthenticated, async (req: Request, res: Respon
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    // Create new teacher
-    const teacher = new User({
+    // Create new user
+    const user = new User({
+      name,
       email,
       password: hashedPassword,
-      name,
       role: 'teacher'
     });
 
-    await teacher.save();
-
-    res.status(201).json({ 
-      user: { 
-        _id: teacher._id,
-        email: teacher.email,
-        name: teacher.name,
-        role: teacher.role
-      }
-    });
+    await user.save();
+    res.status(201).json({ message: 'Teacher created successfully' });
   } catch (error) {
-    console.error('Error creating teacher:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: 'Failed to create teacher' });
   }
 });
 
 // Get all teachers
 router.get('/teachers', isAuthenticated, async (req: Request, res: Response) => {
   try {
-    const authReq = req as AuthenticatedRequest;
-    if (authReq.user.role !== 'lab_instructor') {
-      return res.status(403).json({ error: 'Not authorized' });
-    }
-
-    const teachers = await User.find({ role: 'teacher' });
+    const teachers = await User.find({ role: 'teacher' }).select('-password');
     res.json(teachers);
   } catch (error) {
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: 'Failed to fetch teachers' });
   }
 });
 
 // Delete teacher
 router.delete('/teacher/:id', isAuthenticated, async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
-    const user = await User.findById(id);
-    
-    if (!user) {
+    const teacher = await User.findById((req as AuthRequest).params.id);
+    if (!teacher) {
       return res.status(404).json({ error: 'Teacher not found' });
     }
 
-    if (user.role !== 'teacher') {
+    if (teacher.role !== 'teacher') {
       return res.status(400).json({ error: 'User is not a teacher' });
     }
 
-    await User.findByIdAndDelete(id);
+    await teacher.deleteOne();
     res.json({ message: 'Teacher deleted successfully' });
   } catch (error) {
-    console.error('Error deleting teacher:', error);
     res.status(500).json({ error: 'Failed to delete teacher' });
   }
 });
@@ -298,10 +280,13 @@ router.delete('/teacher/:id', isAuthenticated, async (req: Request, res: Respons
 // Get current user
 router.get('/me', isAuthenticated, async (req: Request, res: Response) => {
   try {
-    const authReq = req as AuthenticatedRequest;
-    res.json(authReq.user);
+    const user = await User.findById((req as AuthRequest).user._id).select('-password');
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    res.json(user);
   } catch (error) {
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: 'Failed to fetch user' });
   }
 });
 
