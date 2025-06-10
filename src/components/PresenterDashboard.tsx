@@ -130,7 +130,7 @@ const PresenterDashboard = () => {
   const [currentTeam, setCurrentTeam] = useState<Team | null>(null);
   const [timer, setTimer] = useState(0);
   const [isEvaluationEnabled, setIsEvaluationEnabled] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   const [evaluationForm, setEvaluationForm] = useState<EvaluationForm | null>(null);
@@ -163,6 +163,10 @@ const PresenterDashboard = () => {
         setProjects(response);
         // Filter active projects
         setActiveProjects(response.filter(project => project.status === 'active'));
+        // Clear any stored project selection
+        localStorage.removeItem('selectedProjectId');
+        setSelectedProject(null);
+        setProjectTeams([]);
       } catch (error) {
         console.error('Error fetching projects:', error);
       }
@@ -182,28 +186,6 @@ const PresenterDashboard = () => {
   }, []);
 
   useEffect(() => {
-    const fetchTeams = async () => {
-      try {
-        const projectId = localStorage.getItem('selectedProjectId');
-        if (!projectId) {
-          setError('No project selected');
-          return;
-        }
-
-        const response = await teamAPI.getByProject(projectId);
-        setTeams(response);
-      } catch (err) {
-        setError('Failed to fetch teams');
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchTeams();
-  }, []);
-
-  useEffect(() => {
     const projectId = localStorage.getItem('selectedProjectId');
     if (!projectId) return;
 
@@ -212,12 +194,20 @@ const PresenterDashboard = () => {
     const queueChannel = pusher.subscribe(CHANNELS.QUEUE(projectId));
 
     // Handle timer updates
-    presentationChannel.bind(EVENTS.TIMER_UPDATE, (data: { timer: number }) => {
+    presentationChannel.bind(EVENTS.TIMER_UPDATE, (data: { timer: number, projectId: string }) => {
+      if (data.projectId !== projectId) {
+        console.log('Ignoring event for different project:', data.projectId);
+        return;
+      }
       setTimer(data.timer);
     });
 
     // Handle evaluation toggle
-    presentationChannel.bind(EVENTS.EVALUATION_TOGGLE, (data: { enabled: boolean }) => {
+    presentationChannel.bind(EVENTS.EVALUATION_TOGGLE, (data: { enabled: boolean, projectId: string }) => {
+      if (data.projectId !== projectId) {
+        console.log('Ignoring event for different project:', data.projectId);
+        return;
+      }
       setIsEvaluationEnabled(data.enabled);
     });
 
@@ -230,29 +220,6 @@ const PresenterDashboard = () => {
   }, []);
 
   // Add new useEffect for evaluation timer
-  useEffect(() => {
-    let interval: NodeJS.Timeout;
-
-    if (isEvaluationTimerRunning && evaluationTimer > 0) {
-      interval = setInterval(() => {
-        setEvaluationTimer(prev => {
-          if (prev <= 1) {
-            setIsEvaluationTimerRunning(false);
-            setIsEvaluationEnabled(false);
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    }
-
-    return () => {
-      if (interval) {
-        clearInterval(interval);
-      }
-    };
-  }, [isEvaluationTimerRunning, evaluationTimer]);
-
   useEffect(() => {
     let interval: NodeJS.Timeout;
 
@@ -272,7 +239,8 @@ const PresenterDashboard = () => {
               },
               body: JSON.stringify({ 
                 timer: newTimer,
-                team: currentTeam  // Send the complete team object
+                team: currentTeam,  // Send the complete team object
+                projectId: projectId // Add projectId to the payload
               })
             }).catch(error => {
               console.error('Failed to update timer and team:', error);
@@ -377,7 +345,8 @@ const PresenterDashboard = () => {
       },
       body: JSON.stringify({ 
         team: selectedTeamData,
-        timer: 0
+        timer: 0,
+        projectId: projectId // Add projectId to the payload
       })
     }).catch(error => {
       console.error('Failed to start presentation:', error);
@@ -392,7 +361,10 @@ const PresenterDashboard = () => {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${localStorage.getItem('token')}`
       },
-      body: JSON.stringify({ teams: updatedTeams })
+      body: JSON.stringify({ 
+        teams: updatedTeams,
+        projectId: projectId // Add projectId to the payload
+      })
     }).catch(error => {
       console.error('Failed to update queue:', error);
     });
@@ -412,7 +384,8 @@ const PresenterDashboard = () => {
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${localStorage.getItem('token')}`
-      }
+      },
+      body: JSON.stringify({ projectId: projectId }) // Add projectId to the payload
     }).catch(error => {
       console.error('Failed to end presentation:', error);
     });
@@ -432,7 +405,10 @@ const PresenterDashboard = () => {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${localStorage.getItem('token')}`
       },
-      body: JSON.stringify({ enabled: newState })
+      body: JSON.stringify({ 
+        enabled: newState,
+        projectId: projectId // Add projectId to the payload
+      })
     }).catch(error => {
       console.error('Failed to toggle evaluation:', error);
     });
@@ -650,44 +626,32 @@ const PresenterDashboard = () => {
     }
   };
 
-  const handleProjectSelect = async (value: string) => {
-    const project = activeProjects.find(p => p.title === value);
-    setSelectedProject(project || null);
+  const handleProjectSelect = async (projectTitle: string) => {
+    setLoading(true);  // Set loading when starting to fetch teams
+    setError('');      // Clear any previous errors
+    
+    const project = activeProjects.find(p => p.title === projectTitle);
     if (project) {
-      await fetchProjectTeams(project._id);
-      await fetchEvaluationResponses(project._id);
-      
-      // Reset form state first
-      setEvaluationForm(null);
-      setFormTitle('');
-      setFormDescription('');
-      setFormFields([]);
-      setEvaluationTime(60);
-
+      setSelectedProject(project);
+      localStorage.setItem('selectedProjectId', project._id);
       try {
-        const response = await evaluationFormAPI.getByProject(project._id);
-        const form = response.data;
-        if (form) {
-          setEvaluationForm(form);
-          setFormTitle(form.title);
-          setFormDescription(form.description);
-          setFormFields(form.fields);
-          setEvaluationTime(form.evaluationTime);
-        }
+        const teams = await teamAPI.getByProject(project._id);
+        setProjectTeams(teams);
       } catch (error) {
-        // Only handle unexpected errors
-        console.error('Error fetching evaluation form:', error);
-        toast({
-          title: 'Error',
-          description: 'Failed to fetch evaluation form',
-          variant: 'destructive',
-        });
+        console.error('Error fetching teams:', error);
+        setError('Failed to fetch teams');
       }
+      // Reset team selection when project changes
+      setSelectedTeam("");
+      setCurrentTeam(null);
     } else {
+      setSelectedProject(null);
+      localStorage.removeItem('selectedProjectId');
       setProjectTeams([]);
-      setEvaluationForm(null);
-      setEvaluationResponses([]);
+      setSelectedTeam("");
+      setCurrentTeam(null);
     }
+    setLoading(false);  // Clear loading state when done
   };
 
   const addFormField = (type: 'rating' | 'text') => {
@@ -790,7 +754,7 @@ const PresenterDashboard = () => {
       return;
     }
 
-    if (!evaluationForm || !evaluationForm._id) { // Ensure form is saved and has an ID
+    if (!evaluationForm || !evaluationForm._id) {
       console.error('No evaluation form available or form not saved yet.');
       toast({
         title: 'Error',
@@ -829,7 +793,8 @@ const PresenterDashboard = () => {
             description: evaluationForm.description,
             fields: evaluationForm.fields,
             evaluationTime: evaluationForm.evaluationTime
-          }
+          },
+          projectId: projectId // Add projectId to the payload
         })
       });
 
@@ -847,7 +812,10 @@ const PresenterDashboard = () => {
         console.log(`Triggering client event client-${EVENTS.EVALUATION_FORM_UPDATE} on channel ${channelName} with form:`, evaluationForm);
         presentationChannel.trigger(
           `client-${EVENTS.EVALUATION_FORM_UPDATE}`,
-          evaluationForm
+          {
+            ...evaluationForm,
+            projectId: projectId // Add projectId to the payload
+          }
         );
         console.log(`client-${EVENTS.EVALUATION_FORM_UPDATE} triggered successfully via Pusher channel.`);
       } else {
@@ -870,7 +838,8 @@ const PresenterDashboard = () => {
         },
         body: JSON.stringify({
           enabled: true,
-          timeLimit: evaluationForm.evaluationTime 
+          timeLimit: evaluationForm.evaluationTime,
+          projectId: projectId // Add projectId to the payload
         }),
       });
 
@@ -1113,152 +1082,174 @@ const PresenterDashboard = () => {
           </TabsContent>
 
           <TabsContent value="presentation" className="space-y-6">
-            <div className="flex justify-between items-center mb-4">
-              <Select 
-                value={selectedProject?.title} 
-                onValueChange={handleProjectSelect}
-                disabled={isTimerRunning}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select Project" />
-                </SelectTrigger>
-                <SelectContent>
-                  {activeProjects.map((project) => (
-                    <SelectItem key={project._id} value={project.title}>
-                      {project.title} ({getClassName(project.class)})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid md:grid-cols-2 gap-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Clock className="h-5 w-5" />
-                    Presentation Timer
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="text-center space-y-4">
-                  <div className="text-6xl font-mono font-bold text-gray-800">
-                    {formatTime(timer)}
-                  </div>
-                  <div className="flex gap-2 justify-center">
-                    <Button 
-                      onClick={() => setIsTimerRunning(!isTimerRunning)}
-                      variant={isTimerRunning ? "destructive" : "default"}
-                      disabled={!selectedProject || !selectedTeam}
-                    >
-                      {isTimerRunning ? "Pause Timer" : "Start Presentation"}
-                    </Button>
-                    <Button 
-                      onClick={toggleEvaluation}
-                      variant={isEvaluationEnabled ? "default" : "outline"}
-                      disabled={!isTimerRunning}
-                    >
-                      {isEvaluationEnabled ? "Disable Evaluation" : "Enable Evaluation"}
-                    </Button>
-                    <Button 
-                      onClick={endPresentation}
-                      variant="destructive"
-                      disabled={!isTimerRunning}
-                    >
-                      End Presentation
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Users className="h-5 w-5" />
-                    Team Selection
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div>
-                    <Label htmlFor="team-select">Select Presenting Team</Label>
-                    <Select 
-                      value={selectedTeam} 
-                      onValueChange={(teamId) => {
-                        setSelectedTeam(teamId);
-                        // Find and set the current team when a team is selected
-                        const selectedTeamData = projectTeams.find(t => t._id === teamId);
-                        if (selectedTeamData) {
-                          setCurrentTeam(selectedTeamData);
-                        }
-                      }}
-                      disabled={isLoadingTeams || projectTeams.length === 0 || isTimerRunning}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder={projectTeams.length === 0 ? "No teams available" : "Choose a team"} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {projectTeams.map((team) => (
-                          <SelectItem key={team._id} value={team._id}>
-                            {team.name} ({team.members.length} members)
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  
-                  {selectedTeam && (
-                    <div className="p-3 bg-blue-50 rounded-lg">
-                      <h5 className="font-medium text-blue-900">
-                        Selected Team: {projectTeams.find(t => t._id === selectedTeam)?.name}
-                      </h5>
-                      <p className="text-sm text-blue-700">
-                        Members: {projectTeams.find(t => t._id === selectedTeam)?.members.join(", ")}
-                      </p>
-                    </div>
-                  )}
-
-                  <div className="p-3 bg-yellow-50 rounded-lg">
-                    <p className="text-sm text-yellow-800">
-                      <strong>Status:</strong> {
-                        !selectedProject ? "Please select a project" :
-                        !selectedTeam ? "Please select a team" :
-                        isTimerRunning ? "Presentation in progress" : "Ready to start"
-                      }
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-
             <Card>
               <CardHeader>
-                <CardTitle>Teams Queue</CardTitle>
+                <CardTitle>Project Selection</CardTitle>
+                <CardDescription>Select a project to manage presentations</CardDescription>
               </CardHeader>
               <CardContent>
-                {isLoadingTeams ? (
-                  <div className="text-center py-4">
-                    <p className="text-gray-500">Loading teams...</p>
-                  </div>
-                ) : projectTeams.length === 0 ? (
-                  <div className="text-center py-4">
-                    <p className="text-gray-500">No teams available for this project</p>
+                <div className="flex justify-between items-center mb-4">
+                  <Select 
+                    value={selectedProject?.title || ""} 
+                    onValueChange={handleProjectSelect}
+                    disabled={isTimerRunning}
+                  >
+                    <SelectTrigger className="w-[300px]">
+                      <SelectValue placeholder="Select a project to begin" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {activeProjects.length === 0 ? (
+                        <SelectItem value="" disabled>No active projects available</SelectItem>
+                      ) : (
+                        activeProjects.map((project) => (
+                          <SelectItem key={project._id} value={project.title}>
+                            {project.title} ({getClassName(project.class)})
+                          </SelectItem>
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {!selectedProject ? (
+                  <div className="text-center py-8">
+                    <p className="text-muted-foreground mb-4">No project is currently selected</p>
+                    <p className="text-sm text-muted-foreground">
+                      Use the dropdown above to select an active project and start managing presentations
+                    </p>
                   </div>
                 ) : (
-                  <div className="space-y-3">
-                    {projectTeams.map((team, index) => (
-                      <div 
-                        key={`${team._id}-${index}`} 
-                        className={`p-3 rounded-lg border ${
-                          team._id === selectedTeam ? 'bg-blue-50 border-blue-200' : 'bg-white'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <h5 className="font-medium">{team.name}</h5>
-                            <p className="text-sm text-gray-600">Members: {team.members.join(", ")}</p>
+                  <div className="space-y-6">
+                    <div className="grid md:grid-cols-2 gap-6">
+                      <Card>
+                        <CardHeader>
+                          <CardTitle className="flex items-center gap-2">
+                            <Clock className="h-5 w-5" />
+                            Presentation Timer
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent className="text-center space-y-4">
+                          <div className="text-6xl font-mono font-bold text-gray-800">
+                            {formatTime(timer)}
                           </div>
-                          <span className="text-sm text-gray-500">#{index + 1}</span>
-                        </div>
-                      </div>
-                    ))}
+                          <div className="flex gap-2 justify-center">
+                            <Button 
+                              onClick={() => setIsTimerRunning(!isTimerRunning)}
+                              variant={isTimerRunning ? "destructive" : "default"}
+                              disabled={!selectedProject || !selectedTeam}
+                            >
+                              {isTimerRunning ? "Pause Timer" : "Start Presentation"}
+                            </Button>
+                            <Button 
+                              onClick={toggleEvaluation}
+                              variant={isEvaluationEnabled ? "default" : "outline"}
+                              disabled={!isTimerRunning}
+                            >
+                              {isEvaluationEnabled ? "Disable Evaluation" : "Enable Evaluation"}
+                            </Button>
+                            <Button 
+                              onClick={endPresentation}
+                              variant="destructive"
+                              disabled={!isTimerRunning}
+                            >
+                              End Presentation
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
+
+                      <Card>
+                        <CardHeader>
+                          <CardTitle className="flex items-center gap-2">
+                            <Users className="h-5 w-5" />
+                            Team Selection
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                          <div>
+                            <Label htmlFor="team-select">Select Presenting Team</Label>
+                            <Select 
+                              value={selectedTeam} 
+                              onValueChange={(teamId) => {
+                                setSelectedTeam(teamId);
+                                const selectedTeamData = projectTeams.find(t => t._id === teamId);
+                                if (selectedTeamData) {
+                                  setCurrentTeam(selectedTeamData);
+                                }
+                              }}
+                              disabled={isLoadingTeams || projectTeams.length === 0 || isTimerRunning}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder={projectTeams.length === 0 ? "No teams available" : "Choose a team"} />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {projectTeams.map((team) => (
+                                  <SelectItem key={team._id} value={team._id}>
+                                    {team.name} ({team.members.length} members)
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          
+                          {selectedTeam && (
+                            <div className="p-3 bg-blue-50 rounded-lg">
+                              <h5 className="font-medium text-blue-900">
+                                Selected Team: {projectTeams.find(t => t._id === selectedTeam)?.name}
+                              </h5>
+                              <p className="text-sm text-blue-700">
+                                Members: {projectTeams.find(t => t._id === selectedTeam)?.members.join(", ")}
+                              </p>
+                            </div>
+                          )}
+
+                          <div className="p-3 bg-yellow-50 rounded-lg">
+                            <p className="text-sm text-yellow-800">
+                              <strong>Status:</strong> {
+                                !selectedTeam ? "Please select a team" :
+                                isTimerRunning ? "Presentation in progress" : "Ready to start"
+                              }
+                            </p>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    </div>
+
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Teams Queue</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        {isLoadingTeams ? (
+                          <div className="text-center py-4">
+                            <p className="text-gray-500">Loading teams...</p>
+                          </div>
+                        ) : projectTeams.length === 0 ? (
+                          <div className="text-center py-4">
+                            <p className="text-gray-500">No teams available for this project</p>
+                          </div>
+                        ) : (
+                          <div className="space-y-3">
+                            {projectTeams.map((team, index) => (
+                              <div 
+                                key={`${team._id}-${index}`} 
+                                className={`p-3 rounded-lg border ${
+                                  team._id === selectedTeam ? 'bg-blue-50 border-blue-200' : 'bg-white'
+                                }`}
+                              >
+                                <div className="flex items-center justify-between">
+                                  <div>
+                                    <h5 className="font-medium">{team.name}</h5>
+                                    <p className="text-sm text-gray-600">Members: {team.members.join(", ")}</p>
+                                  </div>
+                                  <span className="text-sm text-gray-500">#{index + 1}</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
                   </div>
                 )}
               </CardContent>
