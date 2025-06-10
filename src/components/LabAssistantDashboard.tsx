@@ -64,7 +64,7 @@ const LabAssistantDashboard = () => {
       }
 
       const createdTeacher = await authAPI.createTeacher(newTeacher.email, newTeacher.password, newTeacher.name);
-      setTeachers([...teachers, createdTeacher]);
+      await fetchTeachers();
       setNewTeacher({ 
         name: '',
         email: '',

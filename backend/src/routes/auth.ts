@@ -128,13 +128,25 @@ router.post('/teacher/login', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Email and password are required' });
     }
 
+    console.log('Attempting teacher login for:', email);
+
     const user = await User.findOne({ email, role: 'teacher' }).select('+password');
     
     if (!user) {
+      console.log('No teacher found with email:', email);
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
+    console.log('Found teacher:', {
+      id: user._id,
+      email: user.email,
+      role: user.role,
+      hasPassword: !!user.password
+    });
+
     const isMatch = await user.comparePassword(password);
+    console.log('Password match result:', isMatch);
+
     if (!isMatch) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
@@ -218,6 +230,8 @@ router.post('/create-teacher', isAuthenticated, async (req: Request, res: Respon
   try {
     const { name, email, password } = (req as AuthRequest).body;
 
+    console.log('Creating teacher account:', { name, email });
+
     // Validate required fields
     if (!name || !email || !password) {
       return res.status(400).json({ error: 'Name, email, and password are required' });
@@ -226,24 +240,28 @@ router.post('/create-teacher', isAuthenticated, async (req: Request, res: Respon
     // Check if user already exists
     const existingUser = await User.findOne({ email });
     if (existingUser) {
+      console.log('User already exists:', email);
       return res.status(400).json({ error: 'User already exists' });
     }
-
-    // Hash password
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
 
     // Create new user
     const user = new User({
       name,
       email,
-      password: hashedPassword,
+      password, // The password will be hashed by the pre-save hook
       role: 'teacher'
     });
 
     await user.save();
+    console.log('Teacher created successfully:', {
+      id: user._id,
+      email: user.email,
+      role: user.role
+    });
+
     res.status(201).json({ message: 'Teacher created successfully' });
   } catch (error) {
+    console.error('Failed to create teacher:', error);
     res.status(500).json({ error: 'Failed to create teacher' });
   }
 });
