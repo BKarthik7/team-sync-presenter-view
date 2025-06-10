@@ -378,106 +378,48 @@ const PeerDashboard = () => {
           )}
         </div>
 
-        {!showEvaluation ? (
-          <Card>
-            <CardHeader>
-              <CardTitle>Presentation Queue</CardTitle>
-              <CardDescription>Track the current presentation and upcoming teams</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {currentlyPresenting && (
-                  <div className="p-4 rounded-lg border bg-green-50 border-green-200">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h5 className="font-medium">{currentlyPresenting.name}</h5>
-                        <p className="text-sm text-gray-600">Members: {currentlyPresenting.members.join(', ')}</p>
-                      </div>
-                      <div className="text-right">
-                        <span className="inline-block px-2 py-1 text-xs rounded bg-green-100 text-green-800">
-                          Now Presenting
-                        </span>
-                      </div>
+        <Card>
+          <CardHeader>
+            <CardTitle>Presentation Queue</CardTitle>
+            <CardDescription>Track the current presentation and upcoming teams</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {currentlyPresenting && (
+                <div className="p-4 rounded-lg border bg-green-50 border-green-200">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h5 className="font-medium">{currentlyPresenting.name}</h5>
+                      <p className="text-sm text-gray-600">Members: {currentlyPresenting.members.join(', ')}</p>
+                    </div>
+                    <div className="text-right">
+                      <span className="inline-block px-2 py-1 text-xs rounded bg-green-100 text-green-800">
+                        Now Presenting
+                      </span>
                     </div>
                   </div>
-                )}
-              </div>
-              
-              {currentlyPresenting && isEvaluationEnabled && (
-                <div className="mt-6 text-center">
-                  <Button onClick={() => setIsEvaluationModalOpen(true)} className="flex items-center gap-2">
-                    <Star className="h-4 w-4" />
-                    Evaluate Current Presentation
-                  </Button>
                 </div>
               )}
-            </CardContent>
-          </Card>
-        ) : (
-          showEvaluation && evaluationForm && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Star className="h-5 w-5" />
-                  Evaluate {currentlyPresenting?.name}
-                </CardTitle>
-                <CardDescription>{evaluationForm.description}</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="space-y-4">
-                  {evaluationForm.fields.map((field, index) => (
-                    <div key={`${field.label}-${index}`} className="space-y-2">
-                      <Label>
-                        {field.label}
-                        {field.required && <span className="text-red-500 ml-1">*</span>}
-                      </Label>
-                      {field.type === 'rating' ? (
-                        <div className="flex gap-2">
-                          {[1, 2, 3, 4, 5].map((rating) => (
-                            <Button
-                              key={`${field.label}-rating-${rating}`}
-                              variant={evaluationResponses[field.label] === rating ? "default" : "outline"}
-                              onClick={() => handleEvaluationResponse(field.label, rating)}
-                              className="w-12 h-12"
-                            >
-                              {rating}
-                            </Button>
-                          ))}
-                        </div>
-                      ) : (
-                        <Textarea
-                          value={evaluationResponses[field.label] as string || ''}
-                          onChange={(e) => handleEvaluationResponse(field.label, e.target.value)}
-                          placeholder={`Enter your feedback for ${field.label.toLowerCase()}`}
-                          className="mt-2"
-                          rows={4}
-                        />
-                      )}
-                    </div>
-                  ))}
-                </div>
-
-                <div className="flex gap-3">
-                  <Button onClick={() => setIsEvaluationModalOpen(true)} className="flex items-center gap-2">
-                    <Send className="h-4 w-4" />
-                    Submit Evaluation
-                  </Button>
-                  <Button variant="outline" onClick={() => setShowEvaluation(false)}>
-                    Cancel
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          )
-        )}
+            </div>
+            
+            {currentlyPresenting && isEvaluationEnabled && (
+              <div className="mt-6 text-center">
+                <Button onClick={() => setIsEvaluationModalOpen(true)} className="flex items-center gap-2">
+                  <Star className="h-4 w-4" />
+                  Evaluate Current Presentation
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
 
       <Dialog open={isEvaluationModalOpen} onOpenChange={setIsEvaluationModalOpen}>
         <DialogContent 
-            className="max-w-2xl"
-            onPointerDownOutside={(e) => e.preventDefault()} 
-            onEscapeKeyDown={(e) => e.preventDefault()}
-          >
+          className="max-w-2xl"
+          onPointerDownOutside={(e) => e.preventDefault()} 
+          onEscapeKeyDown={(e) => e.preventDefault()}
+        >
           <DialogHeader>
             <DialogTitle className="flex justify-between items-center">
               <span>Evaluation Form</span>

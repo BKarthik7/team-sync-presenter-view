@@ -163,10 +163,46 @@ const PresenterDashboard = () => {
         setProjects(response);
         // Filter active projects
         setActiveProjects(response.filter(project => project.status === 'active'));
-        // Clear any stored project selection
-        localStorage.removeItem('selectedProjectId');
-        setSelectedProject(null);
-        setProjectTeams([]);
+        
+        // Check if there's a stored project
+        const storedProjectId = localStorage.getItem('selectedProjectId');
+        if (storedProjectId) {
+          const storedProject = response.find(p => p._id === storedProjectId);
+          if (storedProject) {
+            setSelectedProject(storedProject);
+            // Fetch teams for stored project
+            const teams = await teamAPI.getByProject(storedProjectId);
+            setProjectTeams(teams);
+            // Fetch evaluation form
+            try {
+              const formResponse = await evaluationFormAPI.getByProject(storedProjectId);
+              if (formResponse && formResponse.data) {
+                const formData = formResponse.data;
+                setEvaluationForm(formData);
+                setFormTitle(formData.title);
+                setFormDescription(formData.description);
+                setFormFields(formData.fields);
+                setEvaluationTime(formData.evaluationTime);
+              }
+            } catch (error) {
+              console.error('Error fetching evaluation form:', error);
+            }
+            // Fetch initial responses
+            try {
+              const responses = await axios.get<EvaluationResponse[]>(
+                `http://localhost:3001/api/evaluations/project/${storedProjectId}`,
+                {
+                  headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('token')}`
+                  }
+                }
+              );
+              setEvaluationResponses(responses.data);
+            } catch (error) {
+              console.error('Error fetching evaluation responses:', error);
+            }
+          }
+        }
       } catch (error) {
         console.error('Error fetching projects:', error);
       }
@@ -182,6 +218,48 @@ const PresenterDashboard = () => {
     };
 
     fetchProjects();
+    fetchClasses();
+  }, []);
+
+  useEffect(() => {
+    const projectId = localStorage.getItem('selectedProjectId');
+    if (!projectId) return;
+
+    const presentationChannel = pusher.subscribe(CHANNELS.PRESENTATION(projectId));
+    
+    // Listen for new evaluation responses
+    presentationChannel.bind(EVENTS.EVALUATION_SUBMITTED, async () => {
+      try {
+        const responses = await axios.get<EvaluationResponse[]>(
+          `http://localhost:3001/api/evaluations/project/${projectId}`,
+          {
+            headers: {
+              'Authorization': `Bearer ${localStorage.getItem('token')}`
+            }
+          }
+        );
+        setEvaluationResponses(responses.data);
+      } catch (error) {
+        console.error('Error fetching updated responses:', error);
+      }
+    });
+
+    return () => {
+      presentationChannel.unbind_all();
+      pusher.unsubscribe(CHANNELS.PRESENTATION(projectId));
+    };
+  }, []);
+
+  useEffect(() => {
+    const fetchClasses = async () => {
+      try {
+        const classes = await classAPI.getClasses();
+        setClasses(classes);
+      } catch (error) {
+        console.error('Error fetching classes:', error);
+      }
+    };
+
     fetchClasses();
   }, []);
 
@@ -598,18 +676,17 @@ const PresenterDashboard = () => {
   };
 
   const handleProjectSelect = async (projectTitle: string) => {
-    setLoading(true);  // Set loading when starting to fetch teams
-    setError('');      // Clear any previous errors
+    setLoading(true);
+    setError('');
     
     const project = activeProjects.find(p => p.title === projectTitle);
     if (project) {
       setSelectedProject(project);
       localStorage.setItem('selectedProjectId', project._id);
       try {
-        // Fetch teams
         const teams = await teamAPI.getByProject(project._id);
         setProjectTeams(teams);
-
+        
         // Fetch evaluation form
         try {
           const formResponse = await evaluationFormAPI.getByProject(project._id);
@@ -630,7 +707,6 @@ const PresenterDashboard = () => {
           }
         } catch (error) {
           console.error('Error fetching evaluation form:', error);
-          // Reset form state on error
           setEvaluationForm(null);
           setFormTitle('');
           setFormDescription('');
@@ -657,7 +733,6 @@ const PresenterDashboard = () => {
         console.error('Error fetching teams:', error);
         setError('Failed to fetch teams');
       }
-      // Reset team selection when project changes
       setSelectedTeam("");
       setCurrentTeam(null);
     } else {
@@ -666,7 +741,6 @@ const PresenterDashboard = () => {
       setProjectTeams([]);
       setSelectedTeam("");
       setCurrentTeam(null);
-      // Reset form and responses state
       setEvaluationForm(null);
       setFormTitle('');
       setFormDescription('');
@@ -674,7 +748,7 @@ const PresenterDashboard = () => {
       setEvaluationTime(60);
       setEvaluationResponses([]);
     }
-    setLoading(false);  // Clear loading state when done
+    setLoading(false);
   };
 
   const addFormField = (type: 'rating' | 'text') => {

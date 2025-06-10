@@ -52,4 +52,5 @@ export const EVENTS = {
   PRESENTATION_END: 'presentation-end',
   CURRENT_TEAM_UPDATE: 'current-team-update',
   EVALUATION_FORM_UPDATE: 'evaluation-form-update',
+  EVALUATION_SUBMITTED: 'evaluation-submitted'
 } as const; 
