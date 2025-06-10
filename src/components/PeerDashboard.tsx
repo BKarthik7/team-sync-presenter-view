@@ -62,6 +62,8 @@ const PeerDashboard = () => {
   const [evaluationTimer, setEvaluationTimer] = useState(0);
   const [isEvaluationTimerRunning, setIsEvaluationTimerRunning] = useState(false);
   const [isEvaluationModalOpen, setIsEvaluationModalOpen] = useState(false);
+  const [hasSubmitted, setHasSubmitted] = useState(false);
+  const [submittedTeams, setSubmittedTeams] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     const fetchProjectAndTeam = async () => {
@@ -163,7 +165,7 @@ const PeerDashboard = () => {
     });
 
     // Handle evaluation toggle
-    presentationChannel.bind(EVENTS.EVALUATION_TOGGLE, (data: { enabled: boolean; form?: EvaluationForm; timeLimit?: number }) => {
+    presentationChannel.bind(EVENTS.EVALUATION_TOGGLE, (data: { enabled: boolean, form?: EvaluationForm; timeLimit?: number }) => {
       console.log('Received evaluation toggle event:', data);
 
       if (data.form) {
@@ -192,6 +194,9 @@ const PeerDashboard = () => {
         setIsEvaluationEnabled(false);
         setIsEvaluationModalOpen(false);
         setShowEvaluation(false);
+        // Reset submission state when evaluation is disabled
+        setHasSubmitted(false);
+        setSubmittedTeams(new Set());
         console.log('Evaluation disabled successfully');
       }
     });
@@ -250,6 +255,35 @@ const PeerDashboard = () => {
   };
 
   const submitEvaluation = async () => {
+    // Check if timer has stopped or evaluation is not enabled
+    if (!isEvaluationEnabled || !isEvaluationTimerRunning) {
+      toast({
+        title: "Error",
+        description: "Evaluation time has ended or evaluation is not enabled",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Check if already submitted for this team
+    if (!currentlyPresenting) {
+      toast({
+        title: "Error",
+        description: "No team is currently presenting",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (submittedTeams.has(currentlyPresenting._id)) {
+      toast({
+        title: "Error",
+        description: "You have already submitted an evaluation for this team",
+        variant: "destructive",
+      });
+      return;
+    }
+
     // Check if all required fields are filled
     const missingFields = evaluationForm?.fields
       .filter(field => field.required && !evaluationResponses[field.label])
@@ -280,6 +314,9 @@ const PeerDashboard = () => {
         teamId: currentlyPresenting._id
       });
       
+      // Add the team to submitted teams
+      setSubmittedTeams(prev => new Set([...prev, currentlyPresenting._id]));
+      setHasSubmitted(true);
       toast({
         title: "Success",
         description: "Evaluation submitted successfully",
@@ -295,6 +332,13 @@ const PeerDashboard = () => {
       });
     }
   };
+
+  // Reset submission state when evaluation is toggled
+  useEffect(() => {
+    if (!isEvaluationEnabled) {
+      setHasSubmitted(false);
+    }
+  }, [isEvaluationEnabled]);
 
   if (loading) {
     return <div>Loading...</div>;
@@ -402,12 +446,18 @@ const PeerDashboard = () => {
               )}
             </div>
             
-            {currentlyPresenting && isEvaluationEnabled && (
+            {currentlyPresenting && isEvaluationEnabled && !submittedTeams.has(currentlyPresenting._id) && isEvaluationTimerRunning && (
               <div className="mt-6 text-center">
                 <Button onClick={() => setIsEvaluationModalOpen(true)} className="flex items-center gap-2">
                   <Star className="h-4 w-4" />
                   Evaluate Current Presentation
                 </Button>
+              </div>
+            )}
+
+            {currentlyPresenting && submittedTeams.has(currentlyPresenting._id) && (
+              <div className="mt-6 text-center">
+                <p className="text-green-600">You have already submitted your evaluation for this team</p>
               </div>
             )}
           </CardContent>
@@ -446,6 +496,7 @@ const PeerDashboard = () => {
                         variant={evaluationResponses[field.label] === rating ? "default" : "outline"}
                         onClick={() => handleEvaluationResponse(field.label, rating)}
                         className="w-12 h-12"
+                        disabled={!isEvaluationTimerRunning || submittedTeams.has(currentlyPresenting?._id || '')}
                       >
                         {rating}
                       </Button>
@@ -456,6 +507,7 @@ const PeerDashboard = () => {
                     value={evaluationResponses[field.label] as string || ''}
                     onChange={(e) => handleEvaluationResponse(field.label, e.target.value)}
                     placeholder="Enter your feedback"
+                    disabled={!isEvaluationTimerRunning || submittedTeams.has(currentlyPresenting?._id || '')}
                   />
                 )}
               </div>
@@ -469,11 +521,15 @@ const PeerDashboard = () => {
                     setIsEvaluationModalOpen(false);
                   }
                 }}
+                disabled={submittedTeams.has(currentlyPresenting?._id || '')}
               >
                 Exit
               </Button>
-              <Button onClick={submitEvaluation}>
-                Submit Evaluation
+              <Button 
+                onClick={submitEvaluation}
+                disabled={!isEvaluationTimerRunning || submittedTeams.has(currentlyPresenting?._id || '')}
+              >
+                {submittedTeams.has(currentlyPresenting?._id || '') ? 'Submitted' : 'Submit Evaluation'}
               </Button>
             </div>
           </div>
