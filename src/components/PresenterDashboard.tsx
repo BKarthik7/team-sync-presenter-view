@@ -597,35 +597,6 @@ const PresenterDashboard = () => {
     }
   };
 
-  // Update project selection to fetch teams
-  const fetchEvaluationResponses = async (projectId: string) => {
-    try {
-      setIsLoadingResponses(true);
-      const response = await axios.get<EvaluationResponse[]>(
-        `http://localhost:3001/api/evaluations/project/${projectId}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
-          }
-        }
-      );
-      setEvaluationResponses(response.data);
-    } catch (error) {
-      console.error('Error fetching evaluation responses:', error);
-      // Don't show error toast for 404 as it's expected when no responses exist
-      if (axios.isAxiosError(error) && error.response?.status !== 404) {
-        toast({
-          title: 'Error',
-          description: 'Failed to fetch evaluation responses',
-          variant: 'destructive',
-        });
-      }
-      setEvaluationResponses([]);
-    } finally {
-      setIsLoadingResponses(false);
-    }
-  };
-
   const handleProjectSelect = async (projectTitle: string) => {
     setLoading(true);  // Set loading when starting to fetch teams
     setError('');      // Clear any previous errors
@@ -635,8 +606,53 @@ const PresenterDashboard = () => {
       setSelectedProject(project);
       localStorage.setItem('selectedProjectId', project._id);
       try {
+        // Fetch teams
         const teams = await teamAPI.getByProject(project._id);
         setProjectTeams(teams);
+
+        // Fetch evaluation form
+        try {
+          const formResponse = await evaluationFormAPI.getByProject(project._id);
+          if (formResponse && formResponse.data) {
+            const formData = formResponse.data;
+            setEvaluationForm(formData);
+            setFormTitle(formData.title);
+            setFormDescription(formData.description);
+            setFormFields(formData.fields);
+            setEvaluationTime(formData.evaluationTime);
+          } else {
+            // Reset form state if no form exists
+            setEvaluationForm(null);
+            setFormTitle('');
+            setFormDescription('');
+            setFormFields([]);
+            setEvaluationTime(60);
+          }
+        } catch (error) {
+          console.error('Error fetching evaluation form:', error);
+          // Reset form state on error
+          setEvaluationForm(null);
+          setFormTitle('');
+          setFormDescription('');
+          setFormFields([]);
+          setEvaluationTime(60);
+        }
+
+        // Fetch evaluation responses
+        try {
+          const responses = await axios.get<EvaluationResponse[]>(
+            `http://localhost:3001/api/evaluations/project/${project._id}`,
+            {
+              headers: {
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+              }
+            }
+          );
+          setEvaluationResponses(responses.data);
+        } catch (error) {
+          console.error('Error fetching evaluation responses:', error);
+          setEvaluationResponses([]);
+        }
       } catch (error) {
         console.error('Error fetching teams:', error);
         setError('Failed to fetch teams');
@@ -650,6 +666,13 @@ const PresenterDashboard = () => {
       setProjectTeams([]);
       setSelectedTeam("");
       setCurrentTeam(null);
+      // Reset form and responses state
+      setEvaluationForm(null);
+      setFormTitle('');
+      setFormDescription('');
+      setFormFields([]);
+      setEvaluationTime(60);
+      setEvaluationResponses([]);
     }
     setLoading(false);  // Clear loading state when done
   };
