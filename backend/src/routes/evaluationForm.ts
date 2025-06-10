@@ -86,7 +86,7 @@ router.get('/project/:projectId', isAuthenticated, async (req: Request, res: Res
 router.put('/:formId', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const authReq = req as EvaluationFormRequest;
-    const { title, description, fields } = authReq.body;
+    const { title, description, fields, evaluationTime } = authReq.body;
     
     if (!authReq.user) {
       return res.status(401).json({ error: 'User not authenticated' });
@@ -109,6 +109,10 @@ router.put('/:formId', isAuthenticated, async (req: Request, res: Response) => {
     form.title = title;
     form.description = description;
     form.fields = fields;
+    // Update evaluation time if provided
+    if (evaluationTime && evaluationTime > 0) {
+      form.evaluationTime = evaluationTime;
+    }
 
     await form.save();
     res.json(form);

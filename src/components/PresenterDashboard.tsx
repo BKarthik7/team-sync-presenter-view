@@ -687,6 +687,12 @@ const PresenterDashboard = () => {
         const teams = await teamAPI.getByProject(project._id);
         setProjectTeams(teams);
         
+        // Reset timer and presentation state
+        setTimer(0);
+        setIsTimerRunning(false);
+        setCurrentTeam(null);
+        setSelectedTeam("");
+        
         // Fetch evaluation form
         try {
           const formResponse = await evaluationFormAPI.getByProject(project._id);
@@ -733,14 +739,16 @@ const PresenterDashboard = () => {
         console.error('Error fetching teams:', error);
         setError('Failed to fetch teams');
       }
-      setSelectedTeam("");
-      setCurrentTeam(null);
     } else {
       setSelectedProject(null);
       localStorage.removeItem('selectedProjectId');
       setProjectTeams([]);
       setSelectedTeam("");
       setCurrentTeam(null);
+      // Reset timer and presentation state
+      setTimer(0);
+      setIsTimerRunning(false);
+      // Reset form and responses state
       setEvaluationForm(null);
       setFormTitle('');
       setFormDescription('');
@@ -749,6 +757,18 @@ const PresenterDashboard = () => {
       setEvaluationResponses([]);
     }
     setLoading(false);
+  };
+
+  // Update the team selection handler
+  const handleTeamSelect = (teamId: string) => {
+    // Reset timer and presentation state when changing teams
+    setTimer(0);
+    setIsTimerRunning(false);
+    setSelectedTeam(teamId);
+    const selectedTeamData = projectTeams.find(t => t._id === teamId);
+    if (selectedTeamData) {
+      setCurrentTeam(selectedTeamData);
+    }
   };
 
   const addFormField = (type: 'rating' | 'text') => {
@@ -801,7 +821,7 @@ const PresenterDashboard = () => {
         title: formTitle,
         description: formDescription || 'No description provided',
         fields: formFields,
-        evaluationTime,
+        evaluationTime: evaluationTime,
         project: selectedProject._id,
       };
       console.log('Form data for save:', formData);
@@ -817,6 +837,8 @@ const PresenterDashboard = () => {
       
       const savedForm = response.data;
       setEvaluationForm(savedForm);
+      // Update evaluation time from saved form
+      setEvaluationTime(savedForm.evaluationTime);
       setIsCreatingForm(false);
       toast({
         title: 'Success',
@@ -829,6 +851,19 @@ const PresenterDashboard = () => {
         description: `Failed to ${evaluationForm?._id ? 'update' : 'create'} evaluation form`,
         variant: 'destructive',
       });
+    }
+  };
+
+  // Update the evaluation time input handler
+  const handleEvaluationTimeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    if (value === '') {
+      setEvaluationTime(60); // Default to 60 if empty
+    } else {
+      const numValue = parseInt(value);
+      if (!isNaN(numValue) && numValue > 0) {
+        setEvaluationTime(numValue);
+      }
     }
   };
 
@@ -1267,13 +1302,7 @@ const PresenterDashboard = () => {
                             <Label htmlFor="team-select">Select Presenting Team</Label>
                             <Select 
                               value={selectedTeam} 
-                              onValueChange={(teamId) => {
-                                setSelectedTeam(teamId);
-                                const selectedTeamData = projectTeams.find(t => t._id === teamId);
-                                if (selectedTeamData) {
-                                  setCurrentTeam(selectedTeamData);
-                                }
-                              }}
+                              onValueChange={handleTeamSelect}
                               disabled={isLoadingTeams || projectTeams.length === 0 || isTimerRunning}
                             >
                               <SelectTrigger>
@@ -1435,17 +1464,8 @@ const PresenterDashboard = () => {
                         type="number"
                         min="1"
                         value={evaluationTime || ''}
-                        onChange={(e) => {
-                          const value = e.target.value;
-                          if (value === '') {
-                            setEvaluationTime(60); // Default to 60 if empty
-                          } else {
-                            const numValue = parseInt(value);
-                            if (!isNaN(numValue) && numValue > 0) {
-                              setEvaluationTime(numValue);
-                            }
-                          }
-                        }}
+                        onChange={handleEvaluationTimeChange}
+                        placeholder="Enter evaluation time in seconds"
                       />
                     </div>
                     <div className="space-y-2">
