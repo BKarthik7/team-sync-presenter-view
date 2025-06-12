@@ -27,10 +27,6 @@ app.use('/api/evaluation-forms', evaluationFormRoutes);
 app.use('/api/evaluations', evaluationRoutes);
 app.use('/api/presentations', presentationsRoutes);
 
-app.get('/', (req, res) => {
-  res.send('Welcome to the Team Sync Presenter View Backend API');
-});
-
 // Connect to MongoDB
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/team-sync')
   .then(() => console.log('Connected to MongoDB'))
