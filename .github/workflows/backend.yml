@@ -4,11 +4,19 @@ on:
   push:
     branches: [ main ]
     paths:
-      - 'backend/**'
+      - 'backend/**/*.ts'
+      - 'backend/**/*.js'
+      - 'backend/package*.json'
+      - 'backend/tsconfig.json'
+      - 'backend/.env*'
   pull_request:
     branches: [ main ]
     paths:
-      - 'backend/**'
+      - 'backend/**/*.ts'
+      - 'backend/**/*.js'
+      - 'backend/package*.json'
+      - 'backend/tsconfig.json'
+      - 'backend/.env*'
 
 jobs:
   build:
