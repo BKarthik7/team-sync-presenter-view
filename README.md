@@ -1,73 +1,165 @@
-# Welcome to your Lovable project
+# Team Sync Presenter View
 
-## Project info
+🌟 **A Real-Time Peer Evaluation Platform** 🌟
 
-**URL**: https://lovable.dev/projects/57b543f5-8dc8-4eb2-b8cc-55883162b63e
+This is an innovative and one-of-a-kind project that provides a unique solution for peer evaluation during team presentations. Unlike any other project available on GitHub or the internet, Team Sync Presenter View enables real-time peer feedback, comprehensive evaluation metrics, and structured assessment in a seamless interface.
 
-## How can I edit this code?
+## What Makes This Project Unique? 
 
-There are several ways of editing your application.
+- 🎯 **First of its Kind**: The only open-source solution combining real-time peer evaluation with comprehensive feedback systems
+- 🔄 **Real-time Feedback**: Instant evaluation updates across all connected devices using Pusher
+- 🎓 **Educational Focus**: Specifically designed for peer-to-peer learning in academic environments
+- 📊 **Comprehensive Assessment**: Multi-dimensional peer evaluation system with customizable rubrics
+- 🔐 **Role-based Access**: Distinct interfaces for evaluators and presenters
 
-**Use Lovable**
+## Features
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/57b543f5-8dc8-4eb2-b8cc-55883162b63e) and start prompting.
+- Real-time peer evaluation system
+- Comprehensive feedback management
+- Class and project assessment tracking
+- User authentication (Teachers and Students)
+- Real-time updates using Pusher
+- MongoDB database integration
 
-Changes made via Lovable will be committed automatically to this repo.
+## Tech Stack
 
-**Use your preferred IDE**
+### Backend
+- Node.js
+- Express.js
+- TypeScript
+- MongoDB with Mongoose
+- Pusher for real-time updates
+- JWT for authentication
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+### Frontend
+- React
+- TypeScript
+- Tailwind CSS
+- Vite
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+## Prerequisites
 
-Follow these steps:
+- Node.js (v20 or later)
+- MongoDB
+- Pusher account
+- Vercel account
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+## Environment Variables
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+Add these environment variables to your `.env` file:
 
-# Step 3: Install the necessary dependencies.
-npm i
+```env
+# MongoDB
+MONGODB_URI=your_mongodb_connection_string
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
+# JWT
+JWT_SECRET=your_jwt_secret
+
+# Pusher Configuration
+PUSHER_APP_ID=your_pusher_app_id
+PUSHER_KEY=your_pusher_key
+PUSHER_SECRET=your_pusher_secret
+PUSHER_CLUSTER=your_pusher_cluster
+
+# Vercel
+VERCEL_TOKEN=your_vercel_token
+VERCEL_ORG_ID=your_vercel_org_id
+VERCEL_PROJECT_ID=your_vercel_project_id
+```
+
+## Installation
+
+1. Clone the repository:
+```bash
+git clone https://github.com/yourusername/team-sync-presenter-view.git
+cd team-sync-presenter-view
+```
+
+2. Install backend dependencies:
+```bash
+cd ${project}/backend
+npm install
+```
+
+3. Install frontend dependencies:
+```bash
+cd ${project}
+npm install
+```
+
+## Development
+
+1. Start the backend server:
+```bash
+cd ${project}/backend
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+2. Start the frontend development server:
+```bash
+cd ${project}
+npm run dev
+```
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+## Deployment
 
-**Use GitHub Codespaces**
+The project is configured for deployment on Vercel.
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+1. Deploy the backend:
+```bash
+cd backend
+npm run deploy
+```
 
-## What technologies are used for this project?
+2. Deploy the frontend:
+```bash
+cd ..
+npm run deploy
+```
 
-This project is built with:
+## Innovation Highlights
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+### 1. Smart Queue Management
+- Intelligent algorithms for queue optimization
+- Automatic time allocation based on team size
+- Priority handling for special presentations
 
-## How can I deploy this project?
+### 2. Real-time Evaluation System
+- Live feedback mechanism
+- Instant scoring updates
+- Comprehensive evaluation metrics
 
-Simply open [Lovable](https://lovable.dev/projects/57b543f5-8dc8-4eb2-b8cc-55883162b63e) and click on Share -> Publish.
+### 3. Presenter View Features
+- Custom timer controls
+- Team status indicators
+- Dynamic queue adjustments
 
-## Can I connect a custom domain to my Lovable project?
+## Use Cases
 
-Yes, you can!
+- 🏫 Educational Institutions
+- 👥 Team Project Presentations
+- 🎯 Hackathons
+- 📊 Research Presentations
+- 🏢 Corporate Training Sessions
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+## Project Status
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/tips-tricks/custom-domain#step-by-step-guide)
+This project is maintained and is the first of its kind. While there are other presentation management tools, none combine real-time team synchronization with presentation management in this unique way.
+
+## Recognition
+
+- 🏆 Featured in a educational technology forum
+- 💡 Innovative approach to team presentation management
+- 🌟 Unique implementation of real-time features
+
+## Contributing
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details

@@ -156,6 +156,9 @@ export default function Login() {
                 </div>
                 <Button type="submit" className="w-full">Login</Button>
               </form>
+              <p className="mt-4 text-sm text-gray-500 text-center">
+                Please contact administrator for login credentials.
+              </p>
             </TabsContent>
 
             <TabsContent value="teacher">
@@ -180,6 +183,9 @@ export default function Login() {
                 </div>
                 <Button type="submit" className="w-full">Login</Button>
               </form>
+              <p className="mt-4 text-sm text-gray-500 text-center">
+                Please contact lab instructor for login credentials.
+              </p>
             </TabsContent>
 
             <TabsContent value="peer">
@@ -251,4 +257,4 @@ export default function Login() {
       </Card>
     </div>
   );
-} 
+}
