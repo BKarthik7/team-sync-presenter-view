@@ -1,4 +1,4 @@
-import express, { Response, Request } from 'express';
+import express, { Request, Response } from 'express';
 import { Project } from '../models/Project';
 import { Class } from '../models/Class';
 import { isAuthenticated } from '../middleware/auth';
@@ -123,4 +123,4 @@ router.delete('/:id', isAuthenticated, async (req: Request, res: Response) => {
   }
 });
 
-export default router; 
+export default router;

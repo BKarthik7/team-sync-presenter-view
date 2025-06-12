@@ -10,13 +10,14 @@ import evaluationRoutes from './routes/evaluation';
 import projectRoutes from './routes/projects';
 import presentationsRoutes from './routes/presentations';
 import evaluationFormRoutes from './routes/evaluationForm';
+import { corsMiddleware } from './config/cors';
 
 dotenv.config();
 
 const app = express();
 
-// Middleware
-app.use(cors());
+// Update Middleware
+app.use(corsMiddleware);
 app.use(express.json());
 
 // Pusher configuration
@@ -34,6 +35,14 @@ if (process.env.PUSHER_APP_ID && process.env.PUSHER_KEY && process.env.PUSHER_SE
 }
 
 export { pusher };
+
+// Add root route before other routes
+const PORT = process.env.PORT || 3001;
+const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
+
+app.get('/', (req, res) => {
+  res.send(`Welcome to the Team Sync Presenter View Backend API at ${BASE_URL}`);
+});
 
 // Routes
 app.use('/api/auth', authRoutes);
@@ -53,7 +62,9 @@ mongoose.connect(MONGODB_URI)
     process.exit(1); // Exit if we can't connect to MongoDB
   });
 
-const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-}); 
+  console.log(`Server is running at ${BASE_URL}`);
+});
+
+// Update export for Vercel
+export default app;

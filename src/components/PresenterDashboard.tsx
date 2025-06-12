@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Play, Pause, Square, Clock, Users, BarChart3, Copy, Check, Trash2, LogOut } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { projectAPI, classAPI, teamAPI, evaluationFormAPI } from '@/lib/api';
+import { projectAPI, classAPI, teamAPI, evaluationFormAPI, api } from '@/lib/api';
 import type { Project } from '@/lib/api';
 import {
   Dialog,
@@ -190,7 +190,7 @@ const PresenterDashboard = () => {
             // Fetch initial responses
             try {
               const responses = await axios.get<EvaluationResponse[]>(
-                `http://localhost:3001/api/evaluations/project/${storedProjectId}`,
+                `${api.defaults.baseURL}/evaluations/project/${storedProjectId}`,
                 {
                   headers: {
                     'Authorization': `Bearer ${localStorage.getItem('token')}`
@@ -231,7 +231,7 @@ const PresenterDashboard = () => {
     presentationChannel.bind(EVENTS.EVALUATION_SUBMITTED, async () => {
       try {
         const responses = await axios.get<EvaluationResponse[]>(
-          `http://localhost:3001/api/evaluations/project/${projectId}`,
+          `${api.defaults.baseURL}/evaluations/project/${projectId}`,
           {
             headers: {
               'Authorization': `Bearer ${localStorage.getItem('token')}`
@@ -309,7 +309,7 @@ const PresenterDashboard = () => {
           const projectId = localStorage.getItem('selectedProjectId');
           if (projectId) {
             // Send both timer and current team info in one request
-            fetch(`http://localhost:3001/api/presentations/${projectId}/timer`, {
+            fetch(`${api.defaults.baseURL}/presentations/${projectId}/timer`, {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
@@ -415,7 +415,7 @@ const PresenterDashboard = () => {
     }
 
     // Notify peers about presentation start using the API
-    fetch(`http://localhost:3001/api/presentations/${projectId}/start`, {
+    fetch(`${api.defaults.baseURL}/presentations/${projectId}/start`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -433,7 +433,7 @@ const PresenterDashboard = () => {
     // Update queue
     const updatedTeams = teams.filter(t => t._id !== team._id);
     setTeams(updatedTeams);
-    fetch(`http://localhost:3001/api/presentations/${projectId}/queue`, {
+    fetch(`${api.defaults.baseURL}/presentations/${projectId}/queue`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -457,7 +457,7 @@ const PresenterDashboard = () => {
     if (!projectId) return;
 
     // Notify peers about presentation end using the API
-    fetch(`http://localhost:3001/api/presentations/${projectId}/end`, {
+    fetch(`${api.defaults.baseURL}/presentations/${projectId}/end`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -477,7 +477,7 @@ const PresenterDashboard = () => {
     if (!projectId) return;
 
     // Notify peers about evaluation toggle using the API
-    fetch(`http://localhost:3001/api/presentations/${projectId}/evaluation`, {
+    fetch(`${api.defaults.baseURL}/presentations/${projectId}/evaluation`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -723,7 +723,7 @@ const PresenterDashboard = () => {
         // Fetch evaluation responses
         try {
           const responses = await axios.get<EvaluationResponse[]>(
-            `http://localhost:3001/api/evaluations/project/${project._id}`,
+            `${api.defaults.baseURL}/evaluations/project/${project._id}`,
             {
               headers: {
                 'Authorization': `Bearer ${localStorage.getItem('token')}`
@@ -912,7 +912,7 @@ const PresenterDashboard = () => {
     try {
       // 1. Ensure the form is pushed/updated on the backend.
       console.log('Pushing/activating evaluation form on backend:', evaluationForm);
-      const pushResponse = await fetch(`http://localhost:3001/api/presentations/${projectId}/evaluation-form`, {
+      const pushResponse = await fetch(`${api.defaults.baseURL}/presentations/${projectId}/evaluation-form`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -962,7 +962,7 @@ const PresenterDashboard = () => {
       
       // 3. Signal the backend to start the evaluation period
       console.log('Triggering backend to start evaluation period...');
-      const toggleResponse = await fetch(`http://localhost:3001/api/presentations/${projectId}/evaluation`, {
+      const toggleResponse = await fetch(`${api.defaults.baseURL}/presentations/${projectId}/evaluation`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1021,7 +1021,7 @@ const PresenterDashboard = () => {
 
     try {
       console.log('Ending evaluation via backend...');
-      const response = await fetch(`http://localhost:3001/api/presentations/${projectId}/evaluation`, {
+      const response = await fetch(`${api.defaults.baseURL}/presentations/${projectId}/evaluation`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1058,7 +1058,7 @@ const PresenterDashboard = () => {
     setIsLoadingResults(true);
     setAggregatedResults(null); // Clear previous results
     try {
-      const response = await fetch(`http://localhost:3001/api/presentations/${projectId}/evaluation-results`, {
+      const response = await fetch(`${api.defaults.baseURL}/presentations/${projectId}/evaluation-results`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`,
         },

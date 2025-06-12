@@ -1,4 +1,4 @@
-import express, { Response, Request } from 'express';
+import express, { Request, Response } from 'express';
 import { Types } from 'mongoose';
 import { AuthenticatedRequest } from '../types';
 import { Class } from '../models/Class';

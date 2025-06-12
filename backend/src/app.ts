@@ -1,5 +1,4 @@
 import express from 'express';
-import cors from 'cors';
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import authRoutes from './routes/auth';
@@ -9,13 +8,14 @@ import teamRoutes from './routes/team';
 import evaluationFormRoutes from './routes/evaluationForm';
 import evaluationRoutes from './routes/evaluation';
 import presentationsRoutes from './routes/presentations';
+import { corsMiddleware } from './config/cors';
 
 dotenv.config();
 
 const app = express();
 
-// Middleware
-app.use(cors());
+// Update Middleware
+app.use(corsMiddleware);
 app.use(express.json());
 
 // Routes
@@ -27,9 +27,13 @@ app.use('/api/evaluation-forms', evaluationFormRoutes);
 app.use('/api/evaluations', evaluationRoutes);
 app.use('/api/presentations', presentationsRoutes);
 
+app.get('/', (req, res) => {
+  res.send('Welcome to the Team Sync Presenter View Backend API');
+});
+
 // Connect to MongoDB
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/team-sync')
   .then(() => console.log('Connected to MongoDB'))
   .catch((error) => console.error('MongoDB connection error:', error));
 
-export default app; 
+export default app;
