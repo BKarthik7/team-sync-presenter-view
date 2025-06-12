@@ -60,11 +60,6 @@ PUSHER_APP_ID=your_pusher_app_id
 PUSHER_KEY=your_pusher_key
 PUSHER_SECRET=your_pusher_secret
 PUSHER_CLUSTER=your_pusher_cluster
-
-# Vercel
-VERCEL_TOKEN=your_vercel_token
-VERCEL_ORG_ID=your_vercel_org_id
-VERCEL_PROJECT_ID=your_vercel_project_id
 ```
 
 ## Installation
