@@ -46,13 +46,16 @@ This is an innovative and one-of-a-kind project that provides a unique solution 
 
 ## Environment Variables
 
-Add these environment variables to your `.env` file:
+Create two `.env` files in your project:
 
+### Backend `.env` (in `/backend` directory)
 ```env
-# MongoDB
+# MongoDB Connection
 MONGODB_URI=your_mongodb_connection_string
 
-# JWT
+# Server Configuration
+PORT=3001
+BASE_URL=your_backend_url
 JWT_SECRET=your_jwt_secret
 
 # Pusher Configuration
@@ -61,6 +64,19 @@ PUSHER_KEY=your_pusher_key
 PUSHER_SECRET=your_pusher_secret
 PUSHER_CLUSTER=your_pusher_cluster
 ```
+
+### Frontend `.env` (in root directory)
+```env
+# API Configuration
+VITE_API_BASE_URL=your_backend_api_url
+JWT_SECRET=your_jwt_secret
+
+# Pusher Configuration
+VITE_PUSHER_KEY=your_pusher_key
+VITE_PUSHER_CLUSTER=your_pusher_cluster
+```
+
+Make sure to replace the placeholder values with your actual credentials.
 
 ## Installation
 
